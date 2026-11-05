@@ -6,7 +6,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { CompaniesService } from './companies.service';
-import { CreateCompanyDto } from './dto/company.dto';
+import { CreateCompanyDto, DeleteCompanyDto } from './dto/company.dto';
 
 @ApiTags('companies')
 @ApiBearerAuth()
@@ -24,6 +24,29 @@ export class CompaniesController {
     return this.companies.actualizarPerfil(companyId, dto, user.userId);
   }
   constructor(private readonly companies: CompaniesService) {}
+
+  @Get(':companyId/respaldo')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('empresas.editar_perfil')
+  respaldo(@Param('companyId', ParseUUIDPipe) companyId: string) {
+    return this.companies.respaldo(companyId);
+  }
+
+  @Post(':companyId/eliminar')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('empresas.editar_perfil')
+  eliminar(@Param('companyId', ParseUUIDPipe) companyId: string, @Body() dto: DeleteCompanyDto,
+    @CurrentUser() user: { userId: string }) {
+    return this.companies.eliminar(companyId, dto.confirmarRuc, user.userId);
+  }
+
+  @Post(':companyId/editar')
+  @UseGuards(PermissionsGuard)
+  @RequirePermissions('empresas.editar_perfil')
+  editar(@Param('companyId', ParseUUIDPipe) companyId: string, @Body() dto: CreateCompanyDto,
+    @CurrentUser() user: { userId: string }) {
+    return this.companies.editar(companyId, dto, user.userId);
+  }
 
   @Get()
   listar(@CurrentUser() user: { userId: string }) {

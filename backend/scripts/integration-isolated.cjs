@@ -377,6 +377,44 @@ async function main() {
   assert.equal(Number(taxResult.totalIvaCompras),23); checks++;
   assert.equal(taxResult.liquidacion.desgloseTarifas.find(v=>v.tarifa==='15').base,100); checks++;
   assert.equal(taxResult.liquidacion.desgloseTarifas.find(v=>v.tarifa==='8').valor,8); checks++;
+  // Exercise the destructive feature only against this disposable database.
+  {
+  const companyPath = `/api/companies/${first.company.id}`;
+  const companyPdf = Buffer.from('%PDF-1.7\nrespaldo empresa').toString('base64');
+  await req('/api/declarations/filings', identified.accessToken, {
+    companyId: first.company.id, declarationId: taxResult.id, revision: taxResult.revision,
+    formulario: '104', tipo: 'PRESENTACION', numero: 'RESPALDO-EMPRESA', fecha: '2026-01-01T00:00:00.000Z',
+    valor: '0.00', observacion: 'Adjunto de prueba para exportación completa', archivoBase64: companyPdf,
+  }, 201);
+  await req(`${companyPath}/editar`, users[1].accessToken, { ...first.company, razonSocial: 'Ajena' }, 403);
+  const edit = { ruc: first.company.ruc, razonSocial: 'Empresa editada', regimen: 'GENERAL', nombreComercial: '', actividadEconomica: '', direccion: 'Dirección de ensayo', telefono: '0991234567' };
+  await req(`${companyPath}/editar`, identified.accessToken, { ...edit, razonSocial: '   ' }, 400);
+  await req(`${companyPath}/editar`, identified.accessToken, { ...edit, ruc: '0991234567001' }, 409);
+  const edited = await req(`${companyPath}/editar`, identified.accessToken, edit, 201);
+  assert.equal(edited.razonSocial, edit.razonSocial); checks++;
+  assert.equal(edited.direccion, edit.direccion); checks++;
+  await req(`${companyPath}/respaldo`, users[1].accessToken, undefined, 403);
+  const backup = await req(`${companyPath}/respaldo`, identified.accessToken);
+  const saved = JSON.parse(require('node:zlib').gunzipSync(Buffer.from(backup.contentBase64, 'base64')).toString('utf8'));
+  assert.equal(saved.empresa.id, first.company.id); checks++;
+  assert.ok(saved.empresa.vouchers.some(v => v.xmlOriginal)); checks++;
+  assert.ok(saved.empresa.declarations.some(d => d.revisions.length)); checks++;
+  assert.ok(saved.empresa.declarations.some(d => d.filings.some(f => f.archivoPdfBase64 === companyPdf))); checks++;
+  assert.equal(saved.decisionesPeriodo.length, 2); checks++;
+  assert.ok(!JSON.stringify(saved).includes('passwordHash')); checks++;
+  assert.ok(!JSON.stringify(saved).includes('archivoCifrado')); checks++;
+  await req(`${companyPath}/eliminar`, users[1].accessToken, { confirmarRuc: first.company.ruc }, 403);
+  await req(`${companyPath}/eliminar`, identified.accessToken, { confirmarRuc: '0991234567001' }, 409);
+  assert.ok(await prisma.company.findUnique({ where: { id: first.company.id } })); checks++;
+  await req(`${companyPath}/eliminar`, identified.accessToken, { confirmarRuc: first.company.ruc }, 201);
+  assert.equal(await prisma.company.findUnique({ where: { id: first.company.id } }), null); checks++;
+  for (const model of ['voucher', 'taxDeclaration', 'periodDecision', 'atsOperation', 'auditLog', 'companyUser']) {
+    assert.equal(await prisma[model].count({ where: { companyId: first.company.id } }), 0); checks++;
+  }
+  assert.ok(await prisma.company.findUnique({ where: { id: users[1].company.id } })); checks++;
+  assert.equal(await prisma.auditLog.count({ where: { accion: 'ELIMINAR_EMPRESA', registroId: first.company.id } }), 1); checks++;
+  await req(`${companyPath}/respaldo`, identified.accessToken, undefined, 403);
+  }
   console.log(JSON.stringify({ result: 'PASS', checks, database: 'PostgreSQL 16 aislado', users: 2, companies: 2,
     scope: 'HTTP real: permisos, registros, login, refresh, logout; sin llamadas SRI ni producción' }));
 }

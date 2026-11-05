@@ -6,6 +6,7 @@ Sistema de declaraciones con interfaz Flutter y API NestJS, Prisma y PostgreSQL.
 
 - Registro con nombre, cédula/RUC y contraseña de 8 a 10 caracteres; no requiere correo.
 - Gestión multiempresa con permisos y sesiones.
+- Administración de empresas: editar datos, descargar un respaldo completo `.json.gz` y eliminar definitivamente con confirmación del RUC. El respaldo contiene XML, declaraciones/versiones, PDF adjuntos en base64, retenciones, ATS, decisiones, auditoría y datos relacionados; no incluye contraseñas ni sesiones de usuarios. La eliminación borra esos datos para todos los usuarios y conserva solo un evento mínimo de eliminación. No cambia el RUC de empresas que ya tienen movimientos.
 - Importación de XML y TXT, detección de duplicados y seguimiento de pendientes de detalle.
 - Facturas con bases e IVA por tarifa; retenciones de IVA y renta por porcentaje.
 - Resúmenes por empresa y período, declaraciones versionadas y exportación CSV.
