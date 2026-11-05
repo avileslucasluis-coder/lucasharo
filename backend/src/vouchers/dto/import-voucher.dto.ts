@@ -1,4 +1,9 @@
-import { IsString, IsUUID, IsIn, MaxLength } from 'class-validator';
+import { IsString, IsUUID, IsIn, MaxLength, Matches } from 'class-validator';
+
+export class CompleteSriDto {
+  @IsUUID() companyId!: string;
+  @IsString() @Matches(/^\d{49}$/) claveAcceso!: string;
+}
 
 export class ImportVoucherDto {
   @IsUUID()

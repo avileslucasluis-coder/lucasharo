@@ -6,13 +6,43 @@ import { parseComprobanteXml, XmlComprobanteException } from './xml-parser.util'
 import { xmlTaxDetail } from './tax-detail';
 import { parseSriTxt } from './txt-parser';
 import { assertPeriodOpen } from '../declarations/period-lock';
+import { SriClientService } from '../sri/sri-client.service';
 
 @Injectable()
 export class VouchersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly sri: SriClientService = new SriClientService(),
   ) {}
+
+  async pendientesDetalle(companyId: string) {
+    return this.prisma.voucher.findMany({
+      where: { companyId, clasificacionPendiente: true },
+      select: { claveAcceso: true }, orderBy: { fechaEmision: 'asc' },
+    });
+  }
+
+  // One document per request: resumable on serverless deployments, no detached jobs.
+  async completarSri(companyId: string, claveAcceso: string, userId: string) {
+    const existing = await this.prisma.voucher.findUnique({
+      where: { companyId_claveAcceso: { companyId, claveAcceso } },
+    });
+    if (!existing) throw new NotFoundException('Primero importa el comprobante desde el TXT de esta empresa.');
+    if (!existing.clasificacionPendiente) return { completado: true };
+    const company = await this.prisma.company.findUnique({ where: { id: companyId } });
+    if (!company) throw new NotFoundException('Empresa no encontrada.');
+    const response = await this.sri.consultar(claveAcceso, 'PRODUCCION');
+    const authorization = response.autorizaciones.find(a => a.estado === 'AUTORIZADO' && a.comprobante);
+    if (!authorization) throw new BadRequestException('El SRI todavía no devolvió el XML autorizado. Reintenta más tarde.');
+    if (!['PRODUCCION', '2'].includes(authorization.ambiente)) throw new BadRequestException('El XML no pertenece al ambiente de producción.');
+    const parsed = parseComprobanteXml(authorization.comprobante, company.ruc);
+    if (parsed.claveAcceso !== claveAcceso || parsed.direccion === 'NO_RELACIONADO') {
+      throw new BadRequestException('El XML recibido no corresponde al comprobante o a la empresa.');
+    }
+    await this.importarXml(companyId, authorization.comprobante, userId);
+    return { completado: true };
+  }
 
   async importarXml(companyId: string, xmlContent: string, userId: string) {
     const company = await this.prisma.company.findUnique({ where: { id: companyId } });

@@ -5,6 +5,15 @@ class VoucherService {
   final ApiClient api;
   VoucherService(this.api);
 
+  Future<List<String>> pendientesDetalle(String companyId) async {
+    final data = await api.get('/api/vouchers/pending-details', query: {'companyId': companyId}) as List;
+    return data.map((v) => v['claveAcceso'] as String).toList();
+  }
+
+  Future<void> completarSri(String companyId, String claveAcceso) async {
+    await api.post('/api/vouchers/complete-sri', body: {'companyId': companyId, 'claveAcceso': claveAcceso});
+  }
+
   /// Sube el contenido crudo del XML al backend, que lo parsea, clasifica
   /// compra/venta y calcula la retención automática — el cliente ya no
   /// hace nada de eso localmente.

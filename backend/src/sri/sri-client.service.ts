@@ -1,6 +1,6 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import { sriEndpoints, sriEnvironment } from './sri-environment';
+import { sriEndpoints, sriEnvironment, SriEnvironment } from './sri-environment';
 
 const array = <T>(valor: T | T[] | undefined): T[] => valor === undefined ? [] : Array.isArray(valor) ? valor : [valor];
 export type SriMessage = { identificador: string; mensaje: string; informacionAdicional: string; tipo: string };
@@ -60,9 +60,9 @@ export class SriClientService {
     return { estado, comprobantes };
   }
 
-  async consultar(claveAcceso: string): Promise<{ claveAcceso: string; autorizaciones: SriAuthorization[] }> {
+  async consultar(claveAcceso: string, environment: SriEnvironment = sriEnvironment()): Promise<{ claveAcceso: string; autorizaciones: SriAuthorization[] }> {
     if (!/^\d{49}$/.test(claveAcceso)) throw new BadGatewayException('Clave inválida para la consulta SRI.');
-    const respuesta = await this.soap(sriEndpoints(sriEnvironment()).autorizacion, 'http://ec.gob.sri.ws.autorizacion', 'autorizacionComprobante', 'claveAccesoComprobante', claveAcceso);
+    const respuesta = await this.soap(sriEndpoints(environment).autorizacion, 'http://ec.gob.sri.ws.autorizacion', 'autorizacionComprobante', 'claveAccesoComprobante', claveAcceso);
     const resultado = respuesta.RespuestaAutorizacionComprobante;
     if (!resultado || String(resultado.claveAccesoConsultada ?? '').trim() !== claveAcceso) {
       throw new BadGatewayException('La respuesta de autorización no corresponde a la clave consultada.');

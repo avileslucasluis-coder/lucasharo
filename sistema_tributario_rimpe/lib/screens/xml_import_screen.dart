@@ -20,8 +20,59 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
   List<Company> _empresas = [];
   Company? _seleccionada;
   bool _procesando = false;
+  String _avance = '';
   String _sentido = 'RECIBIDOS';
   final List<_ResultadoImportacion> _resultados = [];
+
+  Future<void> _completarPendientes(String empresaId) async {
+    try {
+      final claves = await widget.vouchers.pendientesDetalle(empresaId);
+      var completados = 0;
+      var fallidos = 0;
+      for (var i = 0; i < claves.length; i++) {
+        if (i > 0) await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        setState(() => _avance = 'Consultando SRI: ${i + 1} de ${claves.length}');
+        try {
+          try {
+            await widget.vouchers.completarSri(empresaId, claves[i]);
+          } on ApiException catch (e) {
+            if (e.statusCode != 0 && e.statusCode < 500) rethrow;
+            await Future<void>.delayed(const Duration(seconds: 2));
+            if (!mounted) return;
+            await widget.vouchers.completarSri(empresaId, claves[i]);
+          }
+          completados++;
+        } catch (e) {
+          fallidos++;
+          if (!mounted) return;
+          setState(() => _resultados.insert(0, _ResultadoImportacion(
+            nombreArchivo: 'Consulta pendiente · ${claves[i]}', exito: false,
+            mensaje: e is ApiException ? e.mensaje : 'No se pudo completar la consulta. Puedes reintentar.',
+          )));
+        }
+      }
+      if (!mounted) return;
+      setState(() => _resultados.insert(0, _ResultadoImportacion(
+        nombreArchivo: 'Clasificación automática', exito: fallidos == 0,
+        mensaje: claves.isEmpty ? 'No quedan comprobantes pendientes.' : '$completados completados con detalle del SRI · $fallidos pendientes de reintento',
+      )));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _resultados.insert(0, _ResultadoImportacion(
+        nombreArchivo: 'Consulta de pendientes', exito: false,
+        mensaje: e is ApiException ? e.mensaje : 'No se pudo consultar. Reintenta más tarde.',
+      )));
+    }
+  }
+
+  Future<void> _reintentar() async {
+    final empresaId = _seleccionada?.id;
+    if (empresaId == null || _procesando) return;
+    setState(() { _procesando = true; _avance = 'Buscando pendientes...'; });
+    await _completarPendientes(empresaId);
+    if (mounted) setState(() { _procesando = false; _avance = ''; });
+  }
 
   @override
   void initState() {
@@ -59,7 +110,7 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
     );
     if (resultado == null || !mounted) return;
 
-    setState(() => _procesando = true);
+    setState(() { _procesando = true; _avance = 'Importando archivos...'; });
 
     for (final archivo in resultado.files) {
       try {
@@ -72,7 +123,7 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
           final result = await widget.vouchers.importarTxt(companyId: empresaId, contenido: contenido, sentido: _sentido);
           if (!mounted) return;
           setState(() => _resultados.insert(0, _ResultadoImportacion(nombreArchivo: archivo.name, exito: true,
-            mensaje: '${result['importados']} importados · ${result['duplicados']} duplicados · ${result['pendientes']} pendientes de XML')));
+            mensaje: '${result['importados']} importados · ${result['duplicados']} ya registrados. Consultando el detalle automáticamente...')));
           continue;
         }
         final voucher = await widget.vouchers.importarXml(
@@ -104,7 +155,9 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
       }
     }
 
-    setState(() => _procesando = false);
+    if (!mounted) return;
+    await _completarPendientes(empresaId);
+    if (mounted) setState(() { _procesando = false; _avance = ''; });
   }
 
   @override
@@ -113,14 +166,13 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
       appBar: AppBar(title: const Text('Importar comprobantes XML / TXT')),
       body: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: ListView(
           children: [
-            const Text('Procesamiento automático de XML', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('Del TXT a tus impuestos, automáticamente', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text(
-              'El archivo se envía al backend, que lo parsea, clasifica compra/venta '
-              'comparando el RUC emisor y la contraparte contra la empresa. Las retenciones se importan desde su propio XML.',
+              'Sube el TXT del SRI. Buscamos los XML por sus claves de acceso y clasificamos las bases, el IVA y las retenciones. '
+              'Mantén esta pantalla abierta hasta terminar. Si se interrumpe, puedes reintentar los pendientes.',
               style: TextStyle(color: Colors.grey.shade600),
             ),
             const SizedBox(height: 20),
@@ -154,6 +206,13 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
                           : const Icon(Icons.upload_file),
                       label: Text(_procesando ? 'Subiendo...' : 'Elegir archivos XML / TXT'),
                     ),
+                    const SizedBox(height: 8),
+                    TextButton.icon(
+                      onPressed: _procesando || _seleccionada == null ? null : _reintentar,
+                      icon: const Icon(Icons.sync),
+                      label: const Text('Completar / reintentar pendientes'),
+                    ),
+                    if (_procesando) Text(_avance, style: const TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
@@ -162,8 +221,9 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
             if (_resultados.isNotEmpty) ...[
               const Text('Resultado de la importación', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
+              ListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: _resultados.length,
                   itemBuilder: (context, i) {
                     final r = _resultados[i];
@@ -176,7 +236,6 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
                       ),
                     );
                   },
-                ),
               ),
             ],
           ],

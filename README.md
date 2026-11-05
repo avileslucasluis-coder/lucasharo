@@ -9,7 +9,8 @@ Sistema de declaraciones con interfaz Flutter y API NestJS, Prisma y PostgreSQL.
 - Importación de XML y TXT, detección de duplicados y seguimiento de pendientes de detalle.
 - Facturas con bases e IVA por tarifa; retenciones de IVA y renta por porcentaje.
 - Resúmenes por empresa y período, declaraciones versionadas y exportación CSV.
-- Panel mensual adaptable a móvil y escritorio. Sin conexión activa al SRI.
+- Panel mensual adaptable a móvil y escritorio.
+- Al subir TXT, consulta de solo lectura al SRI para completar automáticamente los XML y sus tarifas. Incluye avance y reintento de pendientes; mantener abierta la pantalla de importación. No requiere contraseña SRI ni habilita emisión de comprobantes.
 
 ## Instalación
 
@@ -37,4 +38,4 @@ En `sistema_tributario_rimpe`: `flutter test` y `flutter build web --release`.
 
 Los flujos de monitoreo y copias remotas requieren habilitación explícita mediante variables y secretos de GitHub. Subir este repositorio no publica por sí solo la aplicación.
 
-Consulta [LEEME-DECLARACIONES.md](LEEME-DECLARACIONES.md) para detalles y [ejemplos](ejemplos) para TXT sintéticos. Los TXT sin bases por tarifa se completan con el XML; no se deducen tarifas a partir de totales.
+Consulta [LEEME-DECLARACIONES.md](LEEME-DECLARACIONES.md) para detalles y [ejemplos](ejemplos) para TXT sintéticos. Los TXT sin bases por tarifa se completan con el XML consultado automáticamente al SRI; no se deducen tarifas a partir de totales. Si el SRI no responde, el registro permanece pendiente y se puede retomar con «Completar / reintentar pendientes» sin volver a subir el TXT. La consulta usa el ambiente de producción de solo lectura, independientemente de la configuración de emisión.

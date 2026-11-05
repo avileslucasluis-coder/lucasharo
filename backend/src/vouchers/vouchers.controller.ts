@@ -5,7 +5,7 @@ import { PermissionsGuard } from '../rbac/permissions.guard';
 import { RequirePermissions } from '../rbac/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { VouchersService } from './vouchers.service';
-import { ImportVoucherDto, ImportTxtDto } from './dto/import-voucher.dto';
+import { ImportVoucherDto, ImportTxtDto, CompleteSriDto } from './dto/import-voucher.dto';
 
 @ApiTags('vouchers')
 @ApiBearerAuth()
@@ -13,6 +13,18 @@ import { ImportVoucherDto, ImportTxtDto } from './dto/import-voucher.dto';
 @Controller('api/vouchers')
 export class VouchersController {
   constructor(private readonly vouchers: VouchersService) {}
+
+  @Get('pending-details')
+  @RequirePermissions('comprobantes.importar')
+  pendientes(@Query('companyId') companyId: string) {
+    return this.vouchers.pendientesDetalle(companyId);
+  }
+
+  @Post('complete-sri')
+  @RequirePermissions('comprobantes.importar')
+  completar(@Body() dto: CompleteSriDto, @CurrentUser() user: { userId: string }) {
+    return this.vouchers.completarSri(dto.companyId, dto.claveAcceso, user.userId);
+  }
 
   @Post('import')
   @RequirePermissions('comprobantes.importar')
