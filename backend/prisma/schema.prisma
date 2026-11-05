@@ -1,0 +1,451 @@
+// Esquema de base de datos — Sistema Tributario RIMPE (multiempresa)
+// PostgreSQL. El aislamiento se aplica mediante permisos y filtros de empresa.
+// Este esquema no configura políticas Row-Level Security.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------- Identidad y acceso ----------------
+
+model SecurityRateLimit {
+  key       String   @id
+  attempts  Int
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(6)
+
+  @@index([expiresAt])
+  @@map("security_rate_limits")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  ruc          String?  @unique
+  platformAdmin Boolean @default(false) @map("platform_admin")
+  email        String?  @unique
+  passwordHash String   @map("password_hash")
+  nombre       String
+  activo       Boolean  @default(true)
+  sessionVersion Int @default(0) @map("session_version")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  companyUsers  CompanyUser[]
+  refreshTokens RefreshToken[]
+  loginHistory  LoginHistory[]
+  auditLogs     AuditLog[]
+  passwordResets PasswordReset[]
+  periodDecisions PeriodDecision[]
+
+  @@map("users")
+}
+
+model PasswordReset {
+  id        String @id @default(uuid())
+  userId    String @map("user_id")
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, expiresAt])
+  @@map("password_resets")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @map("token_hash")
+  revocado  Boolean  @default(false)
+  sessionVersion Int @default(0) @map("session_version")
+  expiraEn  DateTime @map("expira_en")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("refresh_tokens")
+}
+
+model LoginHistory {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ip        String?
+  exitoso   Boolean
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("login_history")
+}
+
+model Role {
+  id          String   @id @default(uuid())
+  nombre      String   @unique // SUPER_ADMIN, ADMIN_EMPRESA, CONTADOR, ...
+  descripcion String?
+
+  rolePermissions RolePermission[]
+  companyUsers    CompanyUser[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id     String @id @default(uuid())
+  codigo String @unique // ej. "ats.generate", "declaraciones.presentar"
+  modulo String // ej. "ATS", "DECLARACIONES"
+
+  rolePermissions RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id")
+  permissionId String @map("permission_id")
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+// ---------------- Empresas ----------------
+
+model Company {
+  realizaVentasGravadasIva Boolean?
+  realizaVentasTarifa0 Boolean?
+  realizaOperacionesExterior Boolean?
+  superaFraccionBasicaRenta Boolean?
+  realizaActividadesExcluidasRimpe Boolean?
+  tipoPersona String?
+  periodicidadIvaDeclarada String?
+  deberesFormalesRegistrados String[] @default([])
+  id                       String   @id @default(uuid())
+  ruc                      String   @unique
+  razonSocial              String   @map("razon_social")
+  nombreComercial          String?  @map("nombre_comercial")
+  regimen                  String   // GENERAL | RIMPE_EMPRENDEDOR | RIMPE_NEGOCIO_POPULAR
+  actividadEconomica       String?  @map("actividad_economica")
+  obligadoLlevarContabilidad Boolean? @map("obligado_llevar_contabilidad")
+  esContribuyenteEspecial  Boolean? @map("es_contribuyente_especial")
+  esAgenteRetencion        Boolean? @map("es_agente_retencion")
+  direccion                String?
+  telefono                 String?
+  email                    String?
+  createdAt                DateTime @default(now()) @map("created_at")
+
+  companyUsers    CompanyUser[]
+  vouchers        Voucher[]
+  withholdings    Withholding[]
+  declarations    TaxDeclaration[]
+  atsReports      AtsReport[]
+  atsOperations   AtsOperation[]
+  obligations     TaxObligationInstance[]
+  establishments  Establishment[]
+  customers       Customer[]
+  suppliers       Supplier[]
+  electronicDocuments ElectronicDocument[]
+
+  @@map("companies")
+}
+
+model CompanyUser {
+  id        String  @id @default(uuid())
+  companyId String  @map("company_id")
+  userId    String  @map("user_id")
+  roleId    String  @map("role_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role    @relation(fields: [roleId], references: [id])
+
+  @@unique([companyId, userId])
+  @@map("company_users")
+}
+
+model Establishment {
+  id        String  @id @default(uuid())
+  companyId String  @map("company_id")
+  company   Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  codigo    String  // "001"
+  direccion String?
+
+  @@unique([companyId, codigo])
+  @@map("establishments")
+}
+
+model Customer {
+  id                String  @id @default(uuid())
+  companyId         String  @map("company_id")
+  company           Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  identificacion    String
+  razonSocial       String  @map("razon_social")
+
+  @@unique([companyId, identificacion])
+  @@map("customers")
+}
+
+model Supplier {
+  id                String  @id @default(uuid())
+  companyId         String  @map("company_id")
+  company           Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  identificacion    String
+  razonSocial       String  @map("razon_social")
+
+  @@unique([companyId, identificacion])
+  @@map("suppliers")
+}
+
+// ---------------- Motor tributario (versionable) ----------------
+
+model TaxRule {
+  id             String    @id @default(uuid())
+  regimen        String    // GENERAL | RIMPE_EMPRENDEDOR | RIMPE_NEGOCIO_POPULAR
+  obligacion     String    // IVA | RETENCIONES | ATS | RENTA
+  formulario     String?
+  condicion      String    // expresión evaluada por el motor (ver tax-rules/README)
+  periodicidad   String    // MENSUAL | SEMESTRAL | ANUAL | SEGUN_CORRESPONDA | NO_APLICA
+  baseLegal      String    @map("base_legal")
+  vigenciaDesde  DateTime  @map("vigencia_desde")
+  vigenciaHasta  DateTime? @map("vigencia_hasta")
+  estado         String    @default("ACTIVA") // ACTIVA | INACTIVA
+  observaciones  String?
+
+  @@map("tax_rules")
+}
+
+model TaxObligationInstance {
+  revisionVencimiento Json? @map("revision_vencimiento")
+  id               String    @id @default(uuid())
+  companyId        String    @map("company_id")
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  mes              Int
+  anio             Int
+  tipo             String
+  formulario       String?
+  periodicidad     String
+  estado           String    // OBLIGATORIO | PENDIENTE_INFORMACION | NO_OBLIGADO | VENCIDO
+  motivo           String
+  baseLegal        String    @map("base_legal")
+  fechaVencimiento DateTime? @map("fecha_vencimiento")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  @@unique([companyId, mes, anio, tipo])
+  @@map("tax_obligations")
+}
+
+// ---------------- Comprobantes, retenciones, declaraciones ----------------
+
+model Voucher {
+  detalleImpuestos Json? @map("detalle_impuestos")
+  clasificacionPendiente Boolean @default(false) @map("clasificacion_pendiente")
+  fuente String @default("XML")
+  fechaRegistroAts        DateTime? @map("fecha_registro_ats")
+  @@index([companyId, fechaRegistroAts], map: "vouchers_company_accounting_date")
+  atsRevision             Json? @map("ats_revision")
+  id                      String   @id @default(uuid())
+  companyId               String   @map("company_id")
+  company                 Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  tipoComprobante         String   @map("tipo_comprobante") // FACTURA | NOTA_CREDITO | RETENCION | LIQUIDACION
+  direccion               String   // VENTA | COMPRA | RETENCION_RECIBIDA | RETENCION_EMITIDA | NO_RELACIONADO
+  claveAcceso             String   @map("clave_acceso")
+  xmlOriginal             String?  @map("xml_original") @db.Text
+  rucEmisor               String   @map("ruc_emisor")
+  razonSocialEmisor       String   @map("razon_social_emisor")
+  identificacionContraparte String? @map("identificacion_contraparte")
+  razonSocialContraparte  String?  @map("razon_social_contraparte")
+  fechaEmision            DateTime @map("fecha_emision")
+  baseImponibleIva        Decimal  @map("base_imponible_iva") @db.Decimal(12, 2)
+  baseImponibleIva0       Decimal  @map("base_imponible_iva0") @db.Decimal(12, 2)
+  montoIva                Decimal  @map("monto_iva") @db.Decimal(12, 2)
+  montoRentaRetenida      Decimal  @default(0) @map("monto_renta_retenida") @db.Decimal(12, 2)
+  importeTotal            Decimal  @map("importe_total") @db.Decimal(12, 2)
+  createdAt               DateTime @default(now()) @map("created_at")
+
+  withholding Withholding?
+  atsOperations AtsOperation[] @relation("OperationVoucher")
+  periodDecisions PeriodDecision[]
+
+  @@unique([companyId, id], map: "vouchers_company_id_id_key")
+  @@unique([companyId, claveAcceso])
+  @@map("vouchers")
+}
+
+model Withholding {
+  id                    String   @id @default(uuid())
+  companyId             String   @map("company_id")
+  company               Company  @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  voucherId             String   @unique @map("voucher_id")
+  voucher               Voucher  @relation(fields: [voucherId], references: [id], onDelete: Cascade)
+  codigoRetencionIva    String   @map("codigo_retencion_iva")
+  porcentajeIva         Decimal  @map("porcentaje_iva") @db.Decimal(5, 4)
+  valorRetenidoIva      Decimal  @map("valor_retenido_iva") @db.Decimal(12, 2)
+  codigoRetencionRenta  String   @map("codigo_retencion_renta")
+  porcentajeRenta       Decimal  @map("porcentaje_renta") @db.Decimal(5, 4)
+  valorRetenidoRenta    Decimal  @map("valor_retenido_renta") @db.Decimal(12, 2)
+  createdAt             DateTime @default(now()) @map("created_at")
+
+  @@map("withholdings")
+}
+
+model TaxDeclaration {
+  ajustes                       Json?
+  liquidacion                   Json?
+  filings                       TaxFiling[]
+  periodicidad                  String @default("MENSUAL")
+  id                            String    @id @default(uuid())
+  companyId                     String    @map("company_id")
+  company                       Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  mes                           Int
+  anio                          Int
+  totalVentasGravadas           Decimal   @default(0) @map("total_ventas_gravadas") @db.Decimal(12, 2)
+  totalVentas0                  Decimal   @default(0) @map("total_ventas_0") @db.Decimal(12, 2)
+  totalIvaVentas                Decimal   @default(0) @map("total_iva_ventas") @db.Decimal(12, 2)
+  totalComprasGravadas          Decimal   @default(0) @map("total_compras_gravadas") @db.Decimal(12, 2)
+  totalCompras0                 Decimal   @default(0) @map("total_compras_0") @db.Decimal(12, 2)
+  totalIvaCompras                Decimal  @default(0) @map("total_iva_compras") @db.Decimal(12, 2)
+  totalIvaRetenidoEnVentas      Decimal   @default(0) @map("total_iva_retenido_en_ventas") @db.Decimal(12, 2)
+  totalRetencionesIvaAplicadas  Decimal   @default(0) @map("total_retenciones_iva_aplicadas") @db.Decimal(12, 2)
+  totalRetencionesRentaAplicadas Decimal  @default(0) @map("total_retenciones_renta_aplicadas") @db.Decimal(12, 2)
+  estado                        String    @default("BORRADOR") // BORRADOR|EN_REVISION|VALIDADA|APROBADA|GENERADA|PRESENTADA|RECHAZADA|RECTIFICADA
+  fechaGeneracion                DateTime @default(now()) @map("fecha_generacion")
+  fechaPresentacion              DateTime? @map("fecha_presentacion")
+  revisions                     DeclarationRevision[]
+
+  @@unique([companyId, mes, anio, periodicidad])
+  @@map("tax_declarations")
+}
+
+model DeclarationRevision {
+  id            String @id @default(uuid())
+  declarationId String @map("declaration_id")
+  declaration   TaxDeclaration @relation(fields: [declarationId], references: [id], onDelete: Restrict)
+  version       Int
+  actorId       String @map("actor_id")
+  action        String
+  previous      Json?
+  snapshot      Json
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([declarationId, version])
+  @@map("declaration_revisions")
+}
+
+model AtsReport {
+  id                 String    @id @default(uuid())
+  companyId          String    @map("company_id")
+  company            Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  mes                Int
+  anio               Int
+  usuarioId          String?   @map("usuario_id")
+  versionCatalogo    String    @map("version_catalogo")
+  versionXsd         String    @map("version_xsd")
+  estado             String    @default("BORRADOR") // BORRADOR|VALIDADO|CON_ERRORES|GENERADO
+  hashArchivo         String?  @map("hash_archivo")
+  erroresJson        Json?     @map("errores_json")
+  advertenciasJson   Json?     @map("advertencias_json")
+  fechaGeneracion    DateTime  @default(now()) @map("fecha_generacion")
+
+  @@unique([companyId, mes, anio])
+  @@map("ats_reports")
+}
+
+model TaxFiling {
+  formulario String
+  id String @id @default(uuid())
+  declarationId String @map("declaration_id")
+  declaration TaxDeclaration @relation(fields: [declarationId], references: [id], onDelete: Restrict)
+  revision Int
+  tipo String
+  numero String
+  fecha DateTime
+  valor Decimal @db.Decimal(12,2)
+  actorId String @map("actor_id")
+  observacion String
+  archivoCifrado String? @map("archivo_cifrado")
+  hashArchivo String? @map("hash_archivo")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([declarationId, tipo, numero])
+  @@map("tax_filings")
+}
+
+// ---------------- Auditoría ----------------
+
+model ElectronicDocument {
+  id                  String    @id @default(uuid())
+  companyId           String    @map("company_id")
+  company             Company   @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  claveAcceso         String    @map("clave_acceso")
+  ambiente            String
+  tipoComprobante     String    @map("tipo_comprobante")
+  estado              String    @default("FIRMADO")
+  xmlFirmado          String    @map("xml_firmado") @db.Text
+  xmlAutorizado       String?   @map("xml_autorizado") @db.Text
+  hashXml             String    @map("hash_xml")
+  respuestaRecepcion  Json?     @map("respuesta_recepcion")
+  respuestaAutorizacion Json?   @map("respuesta_autorizacion")
+  ultimoError         String?   @map("ultimo_error")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  @@unique([companyId, ambiente, claveAcceso])
+  @@map("electronic_documents")
+}
+
+model AuditLog {
+  id           String   @id @default(uuid())
+  userId       String?  @map("user_id")
+  user         User?    @relation(fields: [userId], references: [id])
+  companyId    String?  @map("company_id")
+  accion       String   // CREAR_FACTURA, GENERAR_ATS, LOGIN, ...
+  modulo       String
+  registroId   String?  @map("registro_id")
+  valorAnterior Json?   @map("valor_anterior")
+  valorNuevo   Json?    @map("valor_nuevo")
+  ip           String?
+  resultado    String   // OK | ERROR
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@map("audit_logs")
+}
+
+model AtsOperation {
+  id String @id @default(uuid())
+  companyId String @map("company_id")
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  mes Int
+  anio Int
+  kind String
+  reference String
+  identity String
+  voucherId String? @map("voucher_id")
+  voucher Voucher? @relation("OperationVoucher", fields: [companyId, voucherId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  data Json
+  version Int @default(1)
+  actorId String @map("actor_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@unique([companyId, mes, anio, identity])
+  @@unique([companyId, mes, anio, voucherId])
+  @@map("ats_operations")
+}
+
+model PeriodDecision {
+  id String @id @default(uuid())
+  companyId String @map("company_id")
+  voucherId String @map("voucher_id")
+  voucher Voucher @relation(fields: [companyId, voucherId], references: [companyId, id], onDelete: Restrict, onUpdate: NoAction)
+  version Int
+  choice String
+  proposedPeriod String? @map("proposed_period")
+  justification String
+  evidence String
+  sourceHash String @map("source_hash")
+  sourceSnapshot Json @map("source_snapshot")
+  actorId String @map("actor_id")
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([companyId, voucherId, version])
+  @@map("period_decisions")
+}

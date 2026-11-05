@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="no-referrer"><title>Recuperar acceso | Sistema Tributario</title>
+  <link rel="stylesheet" href="/recovery.css"><script src="/recovery.js" defer></script>
+</head>
+<body><main>
+  <p class="brand">SISTEMA TRIBUTARIO</p><h1 id="title">Recuperar acceso</h1>
+  <p id="help">Escribe el correo de tu cuenta para recibir instrucciones.</p>
+  <form id="recovery">
+    <div id="email-fields"><label for="email">Correo electrónico</label><input id="email" type="email" maxlength="254" autocomplete="email" required></div>
+    <div id="password-fields" hidden>
+      <label for="password">Nueva contraseña</label><input id="password" type="password" minlength="8" maxlength="10" autocomplete="new-password">
+      <label for="confirm">Repite la contraseña</label><input id="confirm" type="password" minlength="8" maxlength="10" autocomplete="new-password">
+      <button id="toggle-password" type="button" aria-pressed="false">Mostrar contraseñas</button>
+    </div>
+    <button id="submit" type="submit">Enviar instrucciones</button>
+  </form>
+  <p id="message" role="status" aria-live="polite"></p><a href="/">Volver al inicio de sesión</a>
+</main></body></html>
+

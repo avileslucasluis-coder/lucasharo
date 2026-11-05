@@ -1,0 +1,46 @@
+# Los documentos de entrega se conservan fuera del proyecto.
+/Documentacion Word/
+/reportes/
+/Documentos Word.zip
+*.doc
+*.docx
+~$*
+
+# Dependencias, cachés y resultados de compilación locales.
+**/node_modules/
+**/.dart_tool/
+**/build/
+**/dist/
+**/.cache/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
+**/coverage/
+**/.vercel/
+*.log
+
+# Configuración privada y certificados.
+.env
+.env.*
+!.env.example
+*.p12
+*.pfx
+*.key
+*.dump
+*.enc
+*.partial
+
+# Archivos del sistema operativo.
+.DS_Store
+Thumbs.db
+Desktop.ini
+backend/.local-database.json
+
+# La interfaz compilada se reconstruye desde Flutter; conservar recuperación.
+/backend/public/*
+!/backend/public/recover.html
+!/backend/public/recovery.css
+!/backend/public/recovery.js
+**/.idea/
+*.iml
+*.pem
+*.tsbuildinfo

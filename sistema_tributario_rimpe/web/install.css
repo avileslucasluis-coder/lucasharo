@@ -1,0 +1,32 @@
+#install-app-button {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 1000;
+  border: 1px solid #fff;
+  border-radius: 24px;
+  background: #064574;
+  color: #fff;
+  padding: 12px 18px;
+  font: 600 14px system-ui, sans-serif;
+  cursor: pointer;
+  box-shadow: 0 2px 8px #0003;
+}
+#install-app-button[hidden] { display: none; }
+#install-app-button:disabled { opacity: .6; }
+#install-app-button:focus-visible, #install-app-help button:focus-visible { outline: 3px solid #45aaff; outline-offset: 3px; }
+#install-app-help {
+  box-sizing: border-box;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  padding: 24px;
+  border: 0;
+  border-radius: 16px;
+  color: #182737;
+  background: white;
+  font: 16px/1.5 system-ui, sans-serif;
+}
+#install-app-help::backdrop { background: #0008; }
+#install-app-help h2 { font-size: 21px; margin-top: 0; }
+#install-app-help button { background: #064574; color: white; border: 0; border-radius: 8px; padding: 12px 20px; font: inherit; cursor: pointer; }

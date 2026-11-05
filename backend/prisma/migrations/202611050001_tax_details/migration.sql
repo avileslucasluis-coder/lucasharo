@@ -1,0 +1,1 @@
+ALTER TABLE "vouchers" ADD COLUMN "detalle_impuestos" JSONB, ADD COLUMN "clasificacion_pendiente" BOOLEAN NOT NULL DEFAULT false, ADD COLUMN "fuente" TEXT NOT NULL DEFAULT 'XML';

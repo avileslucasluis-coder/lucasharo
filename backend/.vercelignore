@@ -1,0 +1,17 @@
+.env
+.env.*
+!.env.example
+node_modules
+dist
+.cache
+test
+*.log
+**/*.p12
+**/*.pfx
+**/*.pem
+**/*.key
+**/*.sql.dump
+**/*.dump
+**/*.enc
+**/*.partial
+!public

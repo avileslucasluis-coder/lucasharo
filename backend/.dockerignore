@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+.cache
+.local-database.json
+*.enc
+*.dump
+.git
+*.log

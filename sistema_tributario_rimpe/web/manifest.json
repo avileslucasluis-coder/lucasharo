@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Sistema Tributario",
+  "short_name": "Tributario",
+  "lang": "es-EC",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1565c0",
+  "description": "Gestión de empresas, comprobantes y preparación de declaraciones tributarias.",
+  "icons": [
+    { "src": "icons/Icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icons/Icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

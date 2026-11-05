@@ -1,0 +1,44 @@
+name: sistema_tributario_rimpe
+description: >
+  Sistema Tributario para Contadores y Emprendedores RIMPE.
+  Servicio Comunitario - AITEC. Cliente Flutter para el backend
+  multiempresa (auth, obligaciones, comprobantes, declaraciones, ATS).
+publish_to: 'none'
+version: 2.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Cliente HTTP para la API del backend
+  http: ^1.2.2
+
+  # Selección de archivos (funciona en web y móvil) — para subir XML al backend
+  file_picker: ^8.0.0
+
+  # Persistencia local SOLO para la sesión (tokens JWT), no para datos de negocio
+  shared_preferences: ^2.2.3
+
+  # Formateo de fechas y moneda
+  intl: ^0.19.0
+
+  # Gráficos para el dashboard
+  fl_chart: ^0.68.0
+
+  # Compartir/guardar el XML del ATS generado por el backend
+  share_plus: ^10.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/branding/logo.png
