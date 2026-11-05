@@ -35,11 +35,8 @@ Thumbs.db
 Desktop.ini
 backend/.local-database.json
 
-# La interfaz compilada se reconstruye desde Flutter; conservar recuperación.
-/backend/public/*
-!/backend/public/recover.html
-!/backend/public/recovery.css
-!/backend/public/recovery.js
+# Vercel despliega backend como raíz: conservar la interfaz web publicada.
+/backend/public/.last_build_id
 **/.idea/
 *.iml
 *.pem

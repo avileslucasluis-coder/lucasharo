@@ -24,6 +24,12 @@ Requisitos: Node.js 22, Flutter y PostgreSQL (local o Neon).
 
 Los datos y la configuración local no se incluyen en Git. Una instalación nueva requiere su propia configuración de PostgreSQL y credenciales. El registro en producción está deshabilitado por defecto; revisar `ALLOW_PUBLIC_REGISTRATION` según el uso previsto.
 
+## Publicación en Vercel
+
+Configura `backend` como Root Directory y NestJS como framework, sin sobrescribir Output Directory. `backend/public` incluye la interfaz Flutter compilada para que los despliegues desde GitHub publiquen tanto la API como la página inicial. El build verifica sus archivos antes de continuar.
+
+Después de modificar Flutter, ejecuta `flutter build web --release` en `sistema_tributario_rimpe`, copia `build/web` a `backend/public`, reemplaza `backend/public/flutter_service_worker.js` con `sistema_tributario_rimpe/web/retire-worker.js` y añade los cambios a Git. No uses `--dart-define=API_BASE_URL` con una URL local: la versión web utiliza el mismo dominio del despliegue.
+
 ## Pruebas
 
 En `backend`: `npm test -- --runInBand` y `npm run build`.

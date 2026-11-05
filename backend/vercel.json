@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm ci --include=dev",
-  "buildCommand": "npm run prisma:generate && npm run build",
+  "buildCommand": "node scripts/check-web-build.cjs && npm run prisma:generate && npm run build",
   "headers": [
     {
       "source": "/(.*)",

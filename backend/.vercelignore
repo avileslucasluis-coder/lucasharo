@@ -4,6 +4,7 @@
 node_modules
 dist
 .cache
+.local-database.json
 test
 *.log
 **/*.p12
