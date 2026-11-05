@@ -2,6 +2,11 @@ import { ForbiddenException, ServiceUnavailableException } from '@nestjs/common'
 
 export type SriEnvironment = 'PRUEBAS' | 'PRODUCCION';
 
+/** The live authorization service uses PRODUCCIÓN, with an accent. */
+export function normalizeAuthorizationEnvironment(value: string): string {
+  return value.trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+}
+
 export function sriEnvironment(env: NodeJS.ProcessEnv = process.env): SriEnvironment {
   const configured = (env.SRI_ENVIRONMENT ?? 'pruebas').trim().toLowerCase();
   if (configured === 'pruebas') return 'PRUEBAS';

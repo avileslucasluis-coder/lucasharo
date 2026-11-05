@@ -1,8 +1,17 @@
 import { BadGatewayException, Injectable } from '@nestjs/common';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
-import { sriEndpoints, sriEnvironment, SriEnvironment } from './sri-environment';
+import { sriEndpoints, sriEnvironment, SriEnvironment, normalizeAuthorizationEnvironment } from './sri-environment';
 
 const array = <T>(valor: T | T[] | undefined): T[] => valor === undefined ? [] : Array.isArray(valor) ? valor : [valor];
+
+function authorizationXml(value: string): string {
+  // Some SRI responses encode the carriage return after the XML declaration as
+  // a literal &#xD;. Decode only whitespace BEFORE the root, leaving signed
+  // document contents and their entity references untouched.
+  return value.replace(/^(\uFEFF?[ \t\r\n]*(?:<\?xml[^?]*\?>)?)([ \t\r\n]*(?:(?:&#x0*[da9];|&#0*(?:13|10|9);)[ \t\r\n]*)+)(?=<)/i,
+    (_, prefix: string, padding: string) => prefix + padding.replace(/&#x0*d;|&#0*13;/gi, '\r')
+      .replace(/&#x0*a;|&#0*10;/gi, '\n').replace(/&#x0*9;|&#0*9;/gi, '\t'));
+}
 export type SriMessage = { identificador: string; mensaje: string; informacionAdicional: string; tipo: string };
 export interface SriAuthorization {
   estado: string; numeroAutorizacion: string; fechaAutorizacion: string; ambiente: string; comprobante: string; mensajes: SriMessage[];
@@ -44,7 +53,10 @@ export class SriClientService {
       if (!respuesta.ok || !contenido?.[operacion + 'Response']) throw new Error(`Respuesta inesperada del SRI (HTTP ${respuesta.status}).`);
       return contenido[operacion + 'Response'];
     } catch (error) {
-      const texto = error instanceof Error && /^(Respuesta|SRI SOAP)/.test(error.message) ? error.message : 'No fue posible confirmar la respuesta del SRI. Consulta la autorización antes de reenviar.';
+      const networkMessage = operacion === 'autorizacionComprobante'
+        ? 'El SRI no respondió a la consulta del XML. Puedes reintentar los pendientes sin volver a cargar el TXT.'
+        : 'No fue posible confirmar la respuesta del SRI. Consulta la autorización antes de reenviar.';
+      const texto = error instanceof Error && /^(Respuesta|SRI SOAP)/.test(error.message) ? error.message : networkMessage;
       throw new BadGatewayException(texto);
     }
   }
@@ -69,8 +81,8 @@ export class SriClientService {
     }
     const autorizaciones = array<any>(resultado.autorizaciones?.autorizacion).map((a): SriAuthorization => ({
       estado: String(a.estado ?? '').trim(), numeroAutorizacion: String(a.numeroAutorizacion ?? '').trim(),
-      fechaAutorizacion: String(a.fechaAutorizacion ?? '').trim(), ambiente: String(a.ambiente ?? '').trim(),
-      comprobante: String(a.comprobante ?? ''), mensajes: this.mensajes(a.mensajes),
+      fechaAutorizacion: String(a.fechaAutorizacion ?? '').trim(), ambiente: normalizeAuthorizationEnvironment(String(a.ambiente ?? '')),
+      comprobante: authorizationXml(String(a.comprobante ?? '')), mensajes: this.mensajes(a.mensajes),
     }));
     // numeroComprobantes es opcional en el WSDL; el SRI lo omite en rechazos
     // de consulta (respuesta real código80, estado RECHAZADA).

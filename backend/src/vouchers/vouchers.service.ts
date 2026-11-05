@@ -7,6 +7,7 @@ import { xmlTaxDetail } from './tax-detail';
 import { parseSriTxt } from './txt-parser';
 import { assertPeriodOpen } from '../declarations/period-lock';
 import { SriClientService } from '../sri/sri-client.service';
+import { normalizeAuthorizationEnvironment } from '../sri/sri-environment';
 
 @Injectable()
 export class VouchersService {
@@ -35,7 +36,7 @@ export class VouchersService {
     const response = await this.sri.consultar(claveAcceso, 'PRODUCCION');
     const authorization = response.autorizaciones.find(a => a.estado === 'AUTORIZADO' && a.comprobante);
     if (!authorization) throw new BadRequestException('El SRI todavía no devolvió el XML autorizado. Reintenta más tarde.');
-    if (!['PRODUCCION', '2'].includes(authorization.ambiente)) throw new BadRequestException('El XML no pertenece al ambiente de producción.');
+    if (!['PRODUCCION', '2'].includes(normalizeAuthorizationEnvironment(authorization.ambiente))) throw new BadRequestException('El XML no pertenece al ambiente de producción.');
     const parsed = parseComprobanteXml(authorization.comprobante, company.ruc);
     if (parsed.claveAcceso !== claveAcceso || parsed.direccion === 'NO_RELACIONADO') {
       throw new BadRequestException('El XML recibido no corresponde al comprobante o a la empresa.');

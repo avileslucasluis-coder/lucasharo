@@ -1,6 +1,8 @@
 import { VouchersService } from '../src/vouchers/vouchers.service';
 import { VouchersController } from '../src/vouchers/vouchers.controller';
 import { PERMISSIONS_KEY } from '../src/rbac/permissions.decorator';
+import { parseSriTxt } from '../src/vouchers/txt-parser';
+import { taxSummary } from '../src/vouchers/tax-detail';
 
 const key = '0111202601179001234500120010010000000011234567811';
 const xml = (buyer = '0912345678', access = key) => `<factura><infoTributaria><ruc>1790012345001</ruc><claveAcceso>${access}</claveAcceso></infoTributaria><infoFactura><fechaEmision>01/11/2026</fechaEmision><identificacionComprador>${buyer}</identificacionComprador><importeTotal>115</importeTotal><totalConImpuestos><totalImpuesto><codigo>2</codigo><codigoPorcentaje>4</codigoPorcentaje><baseImponible>100</baseImponible><valor>15</valor></totalImpuesto></totalConImpuestos></infoFactura></factura>`;
@@ -19,6 +21,49 @@ function setup() {
   return { prisma, sri, service: new VouchersService(prisma, { registrar: jest.fn() } as any, sri) };
 }
 describe('Completar TXT mediante consulta de solo lectura al SRI', () => {
+  it.each(['PRODUCCIÓN', 'PRODUCCION', ' producción ', '2'])('completa una factura de producción con ambiente %s', async ambiente => {
+    const { service, sri, prisma } = setup();
+    sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente, comprobante: xml() }] });
+    await expect(service.completarSri('c', key, 'u')).resolves.toEqual({ completado: true });
+    expect(prisma.voucher.updateMany).toHaveBeenCalled();
+  });
+
+  it.each(['PRUEBAS', '1', '', 'DESCONOCIDO'])('sigue rechazando el ambiente %s', async ambiente => {
+    const { service, sri, prisma } = setup();
+    sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente, comprobante: xml() }] });
+    await expect(service.completarSri('c', key, 'u')).rejects.toThrow('ambiente de producción');
+    expect(prisma.voucher.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each([['1.0.0', 'RECIBIDOS'], ['2.0.0', 'RECIBIDOS'], ['1.0.0', 'EMITIDOS'], ['2.0.0', 'EMITIDOS']] as const)(
+    'completa retención XML %s %s y separa todas las tarifas IVA y renta', async (version, sentido) => {
+      const { service, sri, prisma } = setup();
+      const access = key.slice(0, 8) + '07' + key.slice(10);
+      const emisor = sentido === 'RECIBIDOS' ? '1790012345001' : '0912345678001';
+      const receptor = sentido === 'RECIBIDOS' ? '0912345678' : '1790012345001';
+      const txt = `CLAVE_ACCESO\tRUC_EMISOR\tIDENTIFICACION_RECEPTOR\tFECHA_EMISION\tTIPO_COMPROBANTE\n${access}\t${emisor}\t${receptor}\t01/11/2026\tComprobante de Retención`;
+      const [pending] = parseSriTxt(txt, '0912345678001', sentido);
+      expect(pending.clasificacionPendiente).toBe(true);
+      prisma.voucher.findUnique.mockResolvedValue({ ...pending, id: 'v' });
+      const iva = [30, 70, 100, 0, 10, 20, 50];
+      const renta = [15, 10, 5, 3, 2, 1, 0];
+      const tag = version === '1.0.0' ? 'impuesto' : 'retencion';
+      const lines = [[2, iva], [1, renta]].flatMap(([code, rates]) => (rates as number[]).map(rate => `<${tag}><codigo>${code}</codigo><codigoRetencion>1</codigoRetencion><baseImponible>100.00000</baseImponible><porcentajeRetener>${rate}.00</porcentajeRetener><valorRetenido>${rate}.00000</valorRetenido></${tag}>`)).join('');
+      const detail = version === '1.0.0' ? `<impuestos>${lines}</impuestos>` : `<docsSustento><docSustento><retenciones>${lines}</retenciones></docSustento></docsSustento>`;
+      const retention = `<comprobanteRetencion version="${version}"><infoTributaria><ambiente>2</ambiente><ruc>${emisor}</ruc><claveAcceso>${access}</claveAcceso></infoTributaria><infoCompRetencion><fechaEmision>01/11/2026</fechaEmision><identificacionSujetoRetenido>${receptor}</identificacionSujetoRetenido></infoCompRetencion>${detail}</comprobanteRetencion>`;
+      sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente: 'PRODUCCIÓN', comprobante: retention }] });
+      await service.completarSri('c', access, 'u');
+      const data = prisma.voucher.updateMany.mock.calls[0][0].data;
+      expect(data.direccion).toBe(sentido === 'RECIBIDOS' ? 'RETENCION_RECIBIDA' : 'RETENCION_EMITIDA');
+      expect(data.tipoComprobante).toBe('RETENCION');
+      expect(data.montoIva).toBe(280);
+      expect(data.montoRentaRetenida).toBe(36);
+      expect(data.importeTotal).toBe(316);
+      const summary = taxSummary([data]);
+      expect(summary.filter(l => l.grupo === 'RET_IVA').map(l => l.tarifa)).toEqual(iva.map(String));
+      expect(summary.filter(l => l.grupo === 'RENTA').map(l => l.tarifa)).toEqual(renta.map(String));
+      expect(summary.every(l => l.base === 100 && l.valor === Number(l.tarifa))).toBe(true);
+    });
   it('completa el mismo registro con el desglose real y la cédula equivalente', async () => {
     const { service, prisma, sri } = setup();
     await expect(service.completarSri('c', key, 'u')).resolves.toEqual({ completado: true });

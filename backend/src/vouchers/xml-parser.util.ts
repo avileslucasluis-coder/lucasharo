@@ -142,7 +142,9 @@ export function parseComprobanteXml(xmlContent: string, contribuyenteRuc: string
 
 function importeDecimal(raw: unknown): Prisma.Decimal {
   const text = String(raw ?? '');
-  if (!/^\d+(?:\.\d{1,2})?$/.test(text)) {
+  // Some authorized emitters pad monetary values with trailing zeroes.
+  // Accept 6.16000 exactly as 6.16, but do not round away a real fraction of a cent.
+  if (!/^\d+(?:\.\d{1,2}0*)?$/.test(text)) {
     throw new XmlComprobanteException('Importe inválido: se requiere un decimal no negativo con máximo dos decimales.');
   }
   const value = new Prisma.Decimal(text);

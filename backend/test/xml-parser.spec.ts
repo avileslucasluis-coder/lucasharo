@@ -11,6 +11,12 @@ function factura(comprador = ruc, fecha = '15/08/2026') {
 }
 
 describe('Importación de XML', () => {
+  it.each(['15.0', '15.00', '15.00000', '15.01000'])('acepta ceros de relleno monetario: %s', valor => {
+    const content = factura().replace('<valor>15</valor>', `<valor>${valor}</valor>`)
+      .replace('<importeTotal>117</importeTotal>', '<importeTotal>117.00000</importeTotal>')
+      .replace('<baseImponible>100</baseImponible>', '<baseImponible>100.00000</baseImponible>');
+    expect(parseComprobanteXml(content, ruc).montoIva).toBe(Number(valor));
+  });
   it('rechaza una envoltura con estado NO AUTORIZADO', () => {
     const xml = `<autorizacion><estado>NO AUTORIZADO</estado><comprobante><![CDATA[${factura()}]]></comprobante></autorizacion>`;
     expect(() => parseComprobanteXml(xml, ruc)).toThrow(XmlComprobanteException);
