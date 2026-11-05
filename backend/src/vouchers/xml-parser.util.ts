@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
+import { sameTaxpayer } from './taxpayer-identity';
 
 export class XmlComprobanteException extends Error {}
 
@@ -173,17 +174,17 @@ function clasificarDireccion(
   const ruc = contribuyenteRuc.trim();
 
   if (tipo === 'RETENCION') {
-    if (identificacionContraparte.trim() === ruc) return 'RETENCION_RECIBIDA';
-    if (rucEmisor.trim() === ruc) return 'RETENCION_EMITIDA';
+    if (sameTaxpayer(identificacionContraparte, ruc)) return 'RETENCION_RECIBIDA';
+    if (sameTaxpayer(rucEmisor, ruc)) return 'RETENCION_EMITIDA';
     return 'NO_RELACIONADO';
   }
   if (tipo === 'LIQUIDACION') {
-    if (rucEmisor.trim() === ruc) return 'COMPRA';
-    if (identificacionContraparte.trim() === ruc) return 'VENTA';
+    if (sameTaxpayer(rucEmisor, ruc)) return 'COMPRA';
+    if (sameTaxpayer(identificacionContraparte, ruc)) return 'VENTA';
     return 'NO_RELACIONADO';
   }
-  if (rucEmisor.trim() === ruc) return 'VENTA';
-  if (identificacionContraparte.trim() === ruc) return 'COMPRA';
+  if (sameTaxpayer(rucEmisor, ruc)) return 'VENTA';
+  if (sameTaxpayer(identificacionContraparte, ruc)) return 'COMPRA';
   return 'NO_RELACIONADO';
 }
 

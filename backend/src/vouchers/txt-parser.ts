@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { TaxLine } from './tax-detail';
+import { sameTaxpayer } from './taxpayer-identity';
 
 const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function moneyTxt(raw: string): number {
@@ -40,10 +41,10 @@ export function parseSriTxt(content: string, companyRuc: string, sentido: 'RECIB
       const clave = get('CLAVE_ACCESO', 'CLAVE DE ACCESO', 'NUMERO_AUTORIZACION', 'AUTORIZACION');
       if (!/^\d{49}$/.test(clave)) throw new Error('Se requiere la clave de acceso de 49 dígitos.');
       const emitter = get('RUC_EMISOR', 'RUC');
-      if (!/^\d{13}$/.test(emitter)) throw new Error('RUC del emisor inválido.');
+      if (!/^(?:\d{10}|\d{13})$/.test(emitter)) throw new Error('RUC o cédula del emisor inválido.');
       let counterpart = get('IDENTIFICACION_RECEPTOR', 'IDENTIFICACION_COMPRADOR', 'IDENTIFICACION_SUJETO_RETENIDO');
       if (!counterpart && sentido === 'RECIBIDOS') counterpart = companyRuc;
-      if (sentido === 'EMITIDOS' && emitter !== companyRuc || sentido === 'RECIBIDOS' && counterpart !== companyRuc) throw new Error('El comprobante no pertenece a la empresa seleccionada.');
+      if (sentido === 'EMITIDOS' && !sameTaxpayer(emitter, companyRuc) || sentido === 'RECIBIDOS' && !sameTaxpayer(counterpart, companyRuc)) throw new Error('El comprobante no pertenece a la empresa seleccionada.');
       const date = get('FECHA_EMISION', 'FECHA DE EMISION').split('/').map(Number);
       const fecha = new Date(Date.UTC(date[2], date[1] - 1, date[0]));
       if (date.length !== 3 || fecha.getUTCFullYear() !== date[2] || fecha.getUTCMonth() !== date[1] - 1 || fecha.getUTCDate() !== date[0]) throw new Error('Fecha inválida; usa dd/MM/aaaa.');
