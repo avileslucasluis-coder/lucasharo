@@ -25,7 +25,9 @@ async function main() {
   created = true;
   const dbPort = docker(['port', name, '5432/tcp']).split(':').pop();
   for (let i = 0; i < 60; i++) {
-    try { docker(['exec', name, 'pg_isready', '-U', 'postgres']); break; }
+    // La inicialización de PostgreSQL abre primero un servidor temporal por socket.
+    // Esperar TCP evita lanzar migraciones antes del servidor definitivo.
+    try { docker(['exec', name, 'pg_isready', '-h', '127.0.0.1', '-U', 'postgres']); break; }
     catch { if (i === 59) throw new Error('PostgreSQL de pruebas no inició.'); await pause(500); }
   }
   const port = await freePort();
