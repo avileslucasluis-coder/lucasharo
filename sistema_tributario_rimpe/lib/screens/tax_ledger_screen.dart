@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../models/company.dart';
 import '../models/voucher.dart';
@@ -38,8 +39,23 @@ class _TaxLedgerScreenState extends State<TaxLedgerScreen> {
   String? error;
   late String direction = widget.retenciones ? 'RETENCION_RECIBIDA' : 'COMPRA';
   int request = 0;
+  bool _sriActivo = false;
+  int _sriCompletados = 0;
+  void _actualizarSri() {
+    if (!mounted || companyId == null) return;
+    final estado = widget.vouchers.estadoSri(companyId!);
+    if (estado == null) return;
+    final termino = _sriActivo && !estado.activo;
+    final actualizar = termino || estado.completados - _sriCompletados >= 5;
+    _sriActivo = estado.activo;
+    if (actualizar) _sriCompletados = estado.completados;
+    setState(() {});
+    if (actualizar) unawaited(reload());
+  }
   @override
-  void initState() { super.initState(); init(); }
+  void initState() { super.initState(); widget.vouchers.addListener(_actualizarSri); init(); }
+  @override
+  void dispose() { widget.vouchers.removeListener(_actualizarSri); super.dispose(); }
   Future<void> init() async {
     try {
       final result = await widget.companies.listar();
@@ -53,7 +69,17 @@ class _TaxLedgerScreenState extends State<TaxLedgerScreen> {
     setState(() { busy = true; error = null; vouchers = []; });
     try {
       final result = companyId == null ? <Voucher>[] : await widget.vouchers.listar(companyId: companyId!, mes: month, anio: year);
-      if (mounted && id == request) setState(() => vouchers = result);
+      if (mounted && id == request) {
+        setState(() => vouchers = result);
+        if (companyId != null) {
+          final estado = widget.vouchers.estadoSri(companyId!);
+          _sriActivo = estado?.activo ?? false;
+          _sriCompletados = estado?.completados ?? 0;
+          if (result.any((v) => v.clasificacionPendiente) && estado == null) {
+            unawaited(widget.vouchers.completarPendientes(companyId!));
+          }
+        }
+      }
     } catch (e) { if (mounted && id == request) setState(() => error = '$e'); }
     finally { if (mounted && id == request) setState(() => busy = false); }
   }
@@ -75,6 +101,7 @@ class _TaxLedgerScreenState extends State<TaxLedgerScreen> {
     }
     final summary = groups.values.map((b) => {...b, 'base': (b['base'] as int) / 100, 'valor': (b['valor'] as int) / 100}).toList();
     final pending = visible.where((v) => v.clasificacionPendiente).length;
+    final estadoSri = companyId == null ? null : widget.vouchers.estadoSri(companyId!);
     final total = visible.where((v) => !v.clasificacionPendiente).fold<int>(0, (s,v) => s + (v.importeTotal * 100).round() * (v.tipoComprobante == 'NOTA_CREDITO' ? -1 : 1));
     return Scaffold(appBar: AppBar(title: Text(widget.retenciones ? 'Retenciones' : 'Facturas')),
       body: ListView(padding: const EdgeInsets.all(24), children: [
@@ -97,9 +124,18 @@ class _TaxLedgerScreenState extends State<TaxLedgerScreen> {
         Wrap(spacing: 8, children: (widget.retenciones ? {'RETENCION_RECIBIDA': 'Recibidas', 'RETENCION_EMITIDA': 'Emitidas'} : {'COMPRA': 'Compras', 'VENTA': 'Ventas'}).entries.map((e) => ChoiceChip(label: Text(e.value), selected: direction == e.key, onSelected: (_) => setState(() => direction = e.key))).toList()),
         if (busy) const LinearProgressIndicator(),
         if (error != null) ListTile(title: Text(error!), trailing: TextButton(onPressed: reload, child: const Text('Reintentar'))),
-        if (pending > 0) Card(color: Colors.amber.shade50, child: Padding(padding: const EdgeInsets.all(16), child: Text('$pending comprobantes pendientes de detalle. Carga sus XML para clasificarlos. No se suman al resumen.'))),
+        if (pending > 0 || estadoSri?.activo == true) Card(color: Colors.amber.shade50, child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(estadoSri?.activo == true ? estadoSri!.mensaje : '$pending comprobantes pendientes de consulta al SRI.'),
+          const Text('El desglose incluye solo comprobantes clasificados. La consulta continúa al cambiar de sección; no necesitas descargar XML.'),
+          if (estadoSri?.activo == true) const LinearProgressIndicator()
+          else ...[
+            if (estadoSri?.error != null) Text(estadoSri!.error!),
+            if (estadoSri != null && estadoSri.errores.isNotEmpty) Text(estadoSri.errores.values.first),
+            TextButton.icon(onPressed: () => widget.vouchers.completarPendientes(companyId!), icon: const Icon(Icons.sync), label: const Text('Reintentar consulta automática')),
+          ],
+        ]))),
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Total ${widget.retenciones ? 'retenido' : 'facturado'}: ${Formatters.currency.format(total / 100)}', style: Theme.of(context).textTheme.titleLarge),
+          Text('${pending > 0 ? 'Total clasificado' : widget.retenciones ? 'Total retenido' : 'Total facturado'}: ${Formatters.currency.format(total / 100)}', style: Theme.of(context).textTheme.titleLarge),
           TaxBreakdown(lines: summary),
         ]))),
         if (widget.retenciones) const _ProfessionalCalculator(),
@@ -107,7 +143,7 @@ class _TaxLedgerScreenState extends State<TaxLedgerScreen> {
         Text('Comprobantes (${visible.length})', style: Theme.of(context).textTheme.titleLarge),
         if (!busy && visible.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('No hay comprobantes para esta empresa, período y categoría.')),
         ...visible.map((v) => Card(child: ExpansionTile(title: Text(v.razonSocialEmisor),
-          subtitle: Text('${Formatters.date.format(v.fechaEmision)} · ${v.fuente} · ${v.tipoComprobante}${v.clasificacionPendiente ? ' · Pendiente de XML' : ''}'),
+          subtitle: Text('${Formatters.date.format(v.fechaEmision)} · ${v.fuente} · ${v.tipoComprobante}${v.clasificacionPendiente ? ' · Pendiente de consulta al SRI' : ''}'),
           trailing: Text(Formatters.currency.format(v.importeTotal)), children: [
             ListTile(title: const Text('Clave de acceso'), subtitle: SelectableText(v.claveAcceso)),
             TaxBreakdown(lines: v.detalleImpuestos),

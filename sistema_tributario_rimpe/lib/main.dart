@@ -113,7 +113,14 @@ class _RootShellState extends State<RootShell> {
       ];
 
   Future<void> _cerrarSesion() async {
+    _vouchers.dispose();
     await widget.auth.logout();
+  }
+
+  @override
+  void dispose() {
+    _vouchers.dispose();
+    super.dispose();
   }
 
   @override

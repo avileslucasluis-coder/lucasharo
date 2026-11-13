@@ -24,46 +24,16 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
   String _sentido = 'RECIBIDOS';
   final List<_ResultadoImportacion> _resultados = [];
 
-  Future<void> _completarPendientes(String empresaId) async {
-    try {
-      final claves = await widget.vouchers.pendientesDetalle(empresaId);
-      var completados = 0;
-      var fallidos = 0;
-      for (var i = 0; i < claves.length; i++) {
-        if (i > 0) await Future<void>.delayed(const Duration(milliseconds: 600));
-        if (!mounted) return;
-        setState(() => _avance = 'Consultando SRI: ${i + 1} de ${claves.length}');
-        try {
-          try {
-            await widget.vouchers.completarSri(empresaId, claves[i]);
-          } on ApiException catch (e) {
-            if (e.statusCode != 0 && e.statusCode < 500) rethrow;
-            await Future<void>.delayed(const Duration(seconds: 2));
-            if (!mounted) return;
-            await widget.vouchers.completarSri(empresaId, claves[i]);
-          }
-          completados++;
-        } catch (e) {
-          fallidos++;
-          if (!mounted) return;
-          setState(() => _resultados.insert(0, _ResultadoImportacion(
-            nombreArchivo: 'Consulta pendiente · ${claves[i]}', exito: false,
-            mensaje: e is ApiException ? e.mensaje : 'No se pudo completar la consulta. Puedes reintentar.',
-          )));
-        }
-      }
-      if (!mounted) return;
-      setState(() => _resultados.insert(0, _ResultadoImportacion(
-        nombreArchivo: 'Clasificación automática', exito: fallidos == 0,
-        mensaje: claves.isEmpty ? 'No quedan comprobantes pendientes.' : '$completados completados con detalle del SRI · $fallidos pendientes de reintento',
-      )));
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _resultados.insert(0, _ResultadoImportacion(
-        nombreArchivo: 'Consulta de pendientes', exito: false,
-        mensaje: e is ApiException ? e.mensaje : 'No se pudo consultar. Reintenta más tarde.',
-      )));
-    }
+  SriCompletion? get _estado => _seleccionada == null ? null : widget.vouchers.estadoSri(_seleccionada!.id);
+  bool get _ocupado => _procesando || (_estado?.activo ?? false);
+  void _actualizarAvance() { if (mounted) setState(() {}); }
+
+  Future<void> _completarPendientes(String empresaId) => widget.vouchers.completarPendientes(empresaId);
+
+  @override
+  void dispose() {
+    widget.vouchers.removeListener(_actualizarAvance);
+    super.dispose();
   }
 
   Future<void> _reintentar() async {
@@ -77,6 +47,7 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
   @override
   void initState() {
     super.initState();
+    widget.vouchers.addListener(_actualizarAvance);
     _cargarEmpresas();
   }
 
@@ -172,7 +143,7 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
             const SizedBox(height: 4),
             Text(
               'Sube el TXT del SRI. Buscamos los XML por sus claves de acceso y clasificamos las bases, el IVA y las retenciones. '
-              'Mantén esta pantalla abierta hasta terminar. Si se interrumpe, puedes reintentar los pendientes.',
+              'Puedes cambiar de sección mientras consultamos. Mantén la aplicación abierta; si la cierras, retomaremos los pendientes al entrar en Facturas o Retenciones.',
               style: TextStyle(color: Colors.grey.shade600),
             ),
             const SizedBox(height: 20),
@@ -191,15 +162,15 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
                             items: _empresas
                                 .map((c) => DropdownMenuItem(value: c, child: Text('${c.razonSocial} (${c.ruc})')))
                                 .toList(),
-                            onChanged: _procesando ? null : (v) => setState(() => _seleccionada = v),
+                            onChanged: _ocupado ? null : (v) => setState(() => _seleccionada = v),
                           ),
                     const SizedBox(height: 20),
-                    DropdownButtonFormField<String>(isExpanded: true, value: _sentido, decoration: const InputDecoration(labelText: 'TXT del SRI'), items: const [DropdownMenuItem(value: 'RECIBIDOS', child: Text('Comprobantes recibidos')), DropdownMenuItem(value: 'EMITIDOS', child: Text('Comprobantes emitidos'))], onChanged: _procesando ? null : (v) => setState(() => _sentido = v!)),
+                    DropdownButtonFormField<String>(isExpanded: true, value: _sentido, decoration: const InputDecoration(labelText: 'TXT del SRI'), items: const [DropdownMenuItem(value: 'RECIBIDOS', child: Text('Comprobantes recibidos')), DropdownMenuItem(value: 'EMITIDOS', child: Text('Comprobantes emitidos'))], onChanged: _ocupado ? null : (v) => setState(() => _sentido = v!)),
                     const SizedBox(height: 12),
                     const Text('2. Sube uno o varios archivos .xml o .txt', style: TextStyle(fontWeight: FontWeight.bold)),
                     const SizedBox(height: 8),
                     ElevatedButton.icon(
-                      onPressed: _procesando || _empresas.isEmpty ? null : _seleccionarYSubirArchivos,
+                      onPressed: _ocupado || _empresas.isEmpty ? null : _seleccionarYSubirArchivos,
                       icon: _procesando
                           ? const SizedBox(
                               width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -208,16 +179,25 @@ class _XmlImportScreenState extends State<XmlImportScreen> {
                     ),
                     const SizedBox(height: 8),
                     TextButton.icon(
-                      onPressed: _procesando || _seleccionada == null ? null : _reintentar,
+                      onPressed: _ocupado || _seleccionada == null ? null : _reintentar,
                       icon: const Icon(Icons.sync),
                       label: const Text('Completar / reintentar pendientes'),
                     ),
-                    if (_procesando) Text(_avance, style: const TextStyle(fontWeight: FontWeight.bold)),
+                    if (_ocupado) Text(_estado?.activo == true ? _estado!.mensaje : _avance, style: const TextStyle(fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 20),
+            if (_estado != null) Card(child: ListTile(
+              leading: Icon(_estado!.activo ? Icons.sync : _estado!.errores.isEmpty && _estado!.error == null ? Icons.check_circle : Icons.info_outline),
+              title: const Text('Clasificación automática'),
+              subtitle: Text(_estado!.mensaje),
+            )),
+            if (_estado != null && !_estado!.activo)
+              ..._estado!.errores.entries.map((e) => Card(child: ListTile(
+                title: Text('Consulta pendiente · ${e.key}'), subtitle: Text(e.value),
+              ))),
             if (_resultados.isNotEmpty) ...[
               const Text('Resultado de la importación', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               const SizedBox(height: 8),

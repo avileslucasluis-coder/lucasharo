@@ -12,7 +12,7 @@ Sistema de declaraciones con interfaz Flutter y API NestJS, Prisma y PostgreSQL.
 - Facturas con bases e IVA por tarifa; retenciones de IVA y renta por porcentaje.
 - Resúmenes por empresa y período, declaraciones versionadas y exportación CSV.
 - Panel mensual adaptable a móvil y escritorio.
-- Al subir TXT, consulta de solo lectura al SRI para completar automáticamente los XML y sus tarifas. Incluye avance y reintento de pendientes; mantener abierta la pantalla de importación. No requiere contraseña SRI ni habilita emisión de comprobantes.
+- Al subir TXT, consulta de solo lectura al SRI para completar automáticamente los XML y sus tarifas. La cola pertenece a la sesión y continúa al cambiar de sección, con avance en Importar, Facturas y Retenciones. Mantener abierta la aplicación; tras cerrarla o recargarla, se retoman los pendientes al entrar en Facturas o Retenciones. Una sola cola por empresa, reintentos limitados y cancelación al cerrar sesión. No requiere contraseña SRI ni habilita emisión de comprobantes.
 
 ## Instalación
 

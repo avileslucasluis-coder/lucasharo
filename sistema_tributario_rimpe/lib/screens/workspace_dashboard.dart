@@ -91,7 +91,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         const SizedBox(height: 24),
         Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: pending > 0 ? const Color(0xFFFFEBC8) : const Color(0xFFE3EDDF), borderRadius: BorderRadius.circular(20)),
           child: Row(children: [Icon(pending > 0 ? Icons.pending_actions_rounded : Icons.task_alt_rounded, color: ink), const SizedBox(width: 14),
-            Expanded(child: Text(busy ? 'Revisando tus comprobantes…' : error != null ? 'Actualiza el resumen para revisar pendientes.' : pending > 0 ? '$pending comprobantes necesitan su XML para completar el detalle del mes.' : vouchers.isEmpty ? 'Tu espacio está listo. Agrega una empresa y carga tus primeros comprobantes.' : 'No tienes comprobantes pendientes de detalle este mes.', style: const TextStyle(color: ink, height: 1.5))),
+            Expanded(child: Text(busy ? 'Revisando tus comprobantes…' : error != null ? 'Actualiza el resumen para revisar pendientes.' : pending > 0 ? '$pending comprobantes pendientes de consulta al SRI. Abre Facturas o Retenciones para seguir el avance.' : vouchers.isEmpty ? 'Tu espacio está listo. Agrega una empresa y carga tus primeros comprobantes.' : 'No tienes comprobantes pendientes de detalle este mes.', style: const TextStyle(color: ink, height: 1.5))),
           ])),
         const SizedBox(height: 28),
         const Text('Últimos comprobantes del mes', style: TextStyle(fontSize: 20, color: ink, fontWeight: FontWeight.w700)),
