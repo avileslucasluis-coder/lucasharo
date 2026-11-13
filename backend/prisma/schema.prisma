@@ -34,6 +34,7 @@ model User {
   createdAt    DateTime @default(now()) @map("created_at")
 
   companyUsers  CompanyUser[]
+  ownedCompanies Company[] @relation("CompanyOwner")
   refreshTokens RefreshToken[]
   loginHistory  LoginHistory[]
   auditLogs     AuditLog[]
@@ -123,7 +124,9 @@ model Company {
   periodicidadIvaDeclarada String?
   deberesFormalesRegistrados String[] @default([])
   id                       String   @id @default(uuid())
-  ruc                      String   @unique
+  ruc                      String
+  ownerUserId              String?  @map("owner_user_id")
+  owner                    User?    @relation("CompanyOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   razonSocial              String   @map("razon_social")
   nombreComercial          String?  @map("nombre_comercial")
   regimen                  String   // GENERAL | RIMPE_EMPRENDEDOR | RIMPE_NEGOCIO_POPULAR
@@ -148,6 +151,8 @@ model Company {
   suppliers       Supplier[]
   electronicDocuments ElectronicDocument[]
 
+  @@unique([ownerUserId, ruc], map: "companies_owner_user_id_ruc_key")
+  @@index([ruc], map: "companies_ruc_idx")
   @@map("companies")
 }
 

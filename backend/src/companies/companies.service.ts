@@ -66,6 +66,11 @@ export class CompaniesService {
         if (dto.ruc !== anterior.ruc && Object.values(anterior._count).some(count => count > 0)) {
           throw new ConflictException('No se puede cambiar el RUC de una empresa que ya tiene movimientos. Puedes editar sus demás datos.');
         }
+        if (dto.ruc !== anterior.ruc) {
+          const duplicada = await tx.company.findFirst({ where: { id: { not: companyId }, ruc: dto.ruc,
+            companyUsers: { some: { userId } } } });
+          if (duplicada) throw new ConflictException('Ya tienes una empresa registrada con ese RUC en esta cuenta.');
+        }
         const company = await tx.company.update({ where: { id: companyId }, data: dto });
         await this.audit.registrar({ userId, companyId, accion: 'EDITAR_EMPRESA', modulo: 'COMPANIES',
           registroId: companyId, valorAnterior: anterior, valorNuevo: company, resultado: 'OK' }, tx);
@@ -73,7 +78,7 @@ export class CompaniesService {
       });
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-        throw new ConflictException('Ya existe una empresa registrada con ese RUC.');
+        throw new ConflictException('Ya tienes una empresa registrada con ese RUC en esta cuenta.');
       }
       throw error;
     }
@@ -111,11 +116,6 @@ export class CompaniesService {
   }
 
   async crear(dto: CreateCompanyDto, creadorUserId: string) {
-    const existente = await this.prisma.company.findUnique({ where: { ruc: dto.ruc } });
-    if (existente) {
-      throw new ConflictException('Ya existe una empresa registrada con ese RUC.');
-    }
-
     const adminRole = await this.prisma.role.findUnique({
       where: { nombre: 'ADMIN_EMPRESA' },
     });
@@ -125,25 +125,26 @@ export class CompaniesService {
       );
     }
 
-    const company = await this.prisma.company.create({
-      data: {
-        ...dto,
-        companyUsers: {
-          create: { userId: creadorUserId, roleId: adminRole.id },
-        },
-      },
-    });
-
-    await this.audit.registrar({
-      userId: creadorUserId,
-      companyId: company.id,
-      accion: 'CREAR_EMPRESA',
-      modulo: 'COMPANIES',
-      registroId: company.id,
-      valorNuevo: dto,
-      resultado: 'OK',
-    });
-
-    return company;
+    try {
+      return await this.prisma.$transaction(async tx => {
+        const existente = await tx.company.findFirst({ where: { ruc: dto.ruc,
+          companyUsers: { some: { userId: creadorUserId } } } });
+        if (existente) throw new ConflictException('Ya tienes una empresa registrada con ese RUC en esta cuenta.');
+        const company = await tx.company.create({ data: {
+          ...dto, ownerUserId: creadorUserId,
+          companyUsers: { create: { userId: creadorUserId, roleId: adminRole.id } },
+        } });
+        await this.audit.registrar({ userId: creadorUserId, companyId: company.id,
+          accion: 'CREAR_EMPRESA', modulo: 'COMPANIES', registroId: company.id,
+          valorNuevo: dto, resultado: 'OK' }, tx);
+        return company;
+      });
+    } catch (error) {
+      // Also protects simultaneous requests from the same account.
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        throw new ConflictException('Ya tienes una empresa registrada con ese RUC en esta cuenta.');
+      }
+      throw error;
+    }
   }
 }

@@ -46,7 +46,30 @@ async function main() {
   const legacyId = randomUUID();
   docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-v', 'ON_ERROR_STOP=1', '-c',
     `INSERT INTO users(id,email,password_hash,nombre) VALUES ('${legacyId}','migration-fixture@example.com','not-a-login-hash','Cuenta anterior')`]);
+  const legacyCompanyIds = [randomUUID(), randomUUID(), randomUUID()];
+  const legacyRoleId = randomUUID();
+  docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-v', 'ON_ERROR_STOP=1', '-c', `
+    INSERT INTO roles(id,nombre) VALUES ('${legacyRoleId}','ADMIN_EMPRESA');
+    INSERT INTO companies(id,ruc,razon_social,regimen) VALUES
+      ('${legacyCompanyIds[0]}','0998888888001','Migracion creador','GENERAL'),
+      ('${legacyCompanyIds[1]}','0998888887001','Migracion miembro','GENERAL'),
+      ('${legacyCompanyIds[2]}','0998888886001','Migracion sin miembros','GENERAL');
+    INSERT INTO company_users(id,company_id,user_id,role_id) VALUES
+      ('${randomUUID()}','${legacyCompanyIds[0]}','${legacyId}','${legacyRoleId}'),
+      ('${randomUUID()}','${legacyCompanyIds[1]}','${legacyId}','${legacyRoleId}');
+    INSERT INTO audit_logs(id,user_id,company_id,accion,modulo,resultado) VALUES
+      ('${randomUUID()}','${legacyId}','${legacyCompanyIds[0]}','CREAR_EMPRESA','COMPANIES','OK');
+    INSERT INTO establishments(id,company_id,codigo) VALUES ('${randomUUID()}','${legacyCompanyIds[0]}','001');
+  `]);
   run(['node_modules/prisma/build/index.js', 'migrate', 'deploy']);
+  for (const id of legacyCompanyIds.slice(0, 2)) {
+    const owner = docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-Atc', `SELECT owner_user_id FROM companies WHERE id='${id}'`]);
+    assert.equal(owner, legacyId); checks++;
+  }
+  assert.equal(docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-Atc', `SELECT count(*) FROM establishments WHERE company_id='${legacyCompanyIds[0]}'`]), '1'); checks++;
+  assert.equal(docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-Atc', `SELECT count(*) FROM companies WHERE id='${legacyCompanyIds[2]}' AND owner_user_id IS NULL`]), '1'); checks++;
+  docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-v', 'ON_ERROR_STOP=1', '-c',
+    `DELETE FROM companies WHERE id IN (${legacyCompanyIds.map(id => `'${id}'`).join(',')}); DELETE FROM audit_logs WHERE user_id='${legacyId}';`]);
   const preserved = docker(['exec', name, 'psql', '-U', 'postgres', '-d', 'dayanex_test', '-Atc',
     `SELECT nombre || '|' || activo::text FROM users WHERE id='${legacyId}'`]);
   assert.equal(preserved, 'Cuenta anterior|true'); checks++;
@@ -414,6 +437,56 @@ async function main() {
   assert.ok(await prisma.company.findUnique({ where: { id: users[1].company.id } })); checks++;
   assert.equal(await prisma.auditLog.count({ where: { accion: 'ELIMINAR_EMPRESA', registroId: first.company.id } }), 1); checks++;
   await req(`${companyPath}/respaldo`, identified.accessToken, undefined, 403);
+  }
+  // Identical RUCs belong to separate account records, never implicitly shared.
+  {
+    const sharedRuc = '0995555555001';
+    const dto = { ruc: sharedRuc, razonSocial: 'Cuenta A independiente', regimen: 'GENERAL' };
+    const a = await req('/api/companies', identified.accessToken, dto, 201);
+    const b = await req('/api/companies', users[1].accessToken, { ...dto, razonSocial: 'Cuenta B independiente' }, 201);
+    assert.notEqual(a.id, b.id); checks++;
+    assert.notEqual(a.ownerUserId, b.ownerUserId); checks++;
+    await req('/api/companies', identified.accessToken, dto, 409);
+    await req('/api/companies', users[1].accessToken, dto, 409);
+    await req('/api/companies', identified.accessToken, { ...dto, ruc: '0995555554001', ownerUserId: b.ownerUserId }, 400);
+    for (const [own, foreign, token] of [[a,b,identified.accessToken], [b,a,users[1].accessToken]]) {
+      const list = await req('/api/companies', token);
+      assert.deepEqual(list.filter(c => c.ruc === sharedRuc).map(c => c.id), [own.id]); checks++;
+      for (const path of [`/api/vouchers?companyId=${foreign.id}`, `/api/companies/${foreign.id}/respaldo`, `/api/declarations/history?companyId=${foreign.id}&mes=10&anio=2026`]) {
+        await req(path, token, undefined, 403);
+      }
+      await req(`/api/companies/${foreign.id}/editar`, token, dto, 403);
+      await req(`/api/companies/${foreign.id}/eliminar`, token, { confirmarRuc: sharedRuc }, 403);
+    }
+    const pendingTxt = `CLAVE_ACCESO\tRUC_EMISOR\tIDENTIFICACION_RECEPTOR\tFECHA_EMISION\tTIPO_COMPROBANTE\tIMPORTE_TOTAL\n${txtKey}\t1790012345001\t${sharedRuc}\t01/01/2024\tFACTURA\t115.00`;
+    for (const [company,token] of [[a,identified.accessToken],[b,users[1].accessToken]]) {
+      await req('/api/vouchers/import-txt', token, {companyId:company.id,txtContent:pendingTxt,sentido:'RECIBIDOS'}, 201);
+      const ownVouchers = await req(`/api/vouchers?companyId=${company.id}`, token);
+      assert.equal(ownVouchers.length, 1); checks++;
+      assert.equal(ownVouchers[0].companyId, company.id); checks++;
+    }
+    const draftA = await prisma.taxDeclaration.create({ data: { companyId: a.id, mes: 10, anio: 2026, totalIvaCompras: 15 } });
+    const draftB = await prisma.taxDeclaration.create({ data: { companyId: b.id, mes: 10, anio: 2026, totalIvaCompras: 30 } });
+    await req(`/api/companies/${a.id}/editar`, identified.accessToken, { ...dto, razonSocial: 'Solo cambia A' }, 201);
+    assert.equal((await prisma.company.findUniqueOrThrow({where:{id:b.id}})).razonSocial, 'Cuenta B independiente'); checks++;
+    const backupA = await req(`/api/companies/${a.id}/respaldo`, identified.accessToken);
+    const dataA = JSON.parse(require('node:zlib').gunzipSync(Buffer.from(backupA.contentBase64,'base64')).toString());
+    assert.deepEqual(dataA.empresa.vouchers.map(v => v.companyId), [a.id]); checks++;
+    assert.deepEqual(dataA.empresa.declarations.map(d => d.id), [draftA.id]); checks++;
+    await req(`/api/companies/${a.id}/eliminar`, identified.accessToken, {confirmarRuc:sharedRuc}, 201);
+    assert.equal(await prisma.voucher.count({where:{companyId:b.id}}),1); checks++;
+    assert.ok(await prisma.taxDeclaration.findUnique({where:{id:draftB.id}})); checks++;
+    // Editing and simultaneous creation are still unique within one account.
+    const editable = await req('/api/companies', identified.accessToken, { ...dto, ruc:'0995555553001' }, 201);
+    await req(`/api/companies/${editable.id}/editar`, identified.accessToken, dto, 201);
+    const concurrentDto = {...dto, ruc:'0995555552001'};
+    const responses = await Promise.all([0,1].map(() => fetch(origin+'/api/companies', {
+      method:'POST', headers:{'Content-Type':'application/json',Authorization:`Bearer ${identified.accessToken}`}, body:JSON.stringify(concurrentDto),
+    })));
+    assert.deepEqual(responses.map(r=>r.status).sort(),[201,409]); checks++;
+    await req(`/api/companies/${editable.id}/editar`, identified.accessToken, concurrentDto, 409);
+    await req(`/api/companies/${b.id}/eliminar`, users[1].accessToken, {confirmarRuc:sharedRuc}, 201);
+    await req(`/api/companies/${editable.id}/eliminar`, identified.accessToken, {confirmarRuc:sharedRuc}, 201);
   }
   console.log(JSON.stringify({ result: 'PASS', checks, database: 'PostgreSQL 16 aislado', users: 2, companies: 2,
     scope: 'HTTP real: permisos, registros, login, refresh, logout; sin llamadas SRI ni producción' }));
