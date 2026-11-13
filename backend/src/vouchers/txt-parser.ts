@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { TaxLine } from './tax-detail';
 import { sameTaxpayer } from './taxpayer-identity';
+import { digitoVerificador } from '../sri/sri-xml';
 
 const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function moneyTxt(raw: string): number {
@@ -33,6 +34,8 @@ export function parseSriTxt(content: string, companyRuc: string, sentido: 'RECIB
   if (lines.length < 2 || lines.length > 10001) throw new Error('El TXT debe contener encabezado y entre 1 y 10000 filas.');
   const delimiter = lines[0].includes('\t') ? '\t' : ';';
   const headers = cells(lines[0], delimiter).map(normalize);
+  // El listado de emitidos del SRI omite el emisor y llama RAZON_SOCIAL al cliente.
+  const emittedListing = sentido === 'EMITIDOS' && !headers.includes('RUCEMISOR') && !headers.includes('RUC');
   const records = new Map<string, any>();
   for (let i = 1; i < lines.length; i++) {
     try {
@@ -42,7 +45,10 @@ export function parseSriTxt(content: string, companyRuc: string, sentido: 'RECIB
       const get = (...keys: string[]) => keys.map(k => row[normalize(k)]).find(v => v !== undefined && v !== '') ?? '';
       const clave = get('CLAVE_ACCESO', 'CLAVE DE ACCESO', 'NUMERO_AUTORIZACION', 'AUTORIZACION');
       if (!/^\d{49}$/.test(clave)) throw new Error('Se requiere la clave de acceso de 49 dígitos.');
-      const emitter = get('RUC_EMISOR', 'RUC');
+      if (emittedListing && digitoVerificador(clave.slice(0, 48)) !== clave[48]) {
+        throw new Error('La clave de acceso tiene un dígito verificador inválido.');
+      }
+      const emitter = emittedListing ? clave.slice(10, 23) : get('RUC_EMISOR', 'RUC');
       if (!/^(?:\d{10}|\d{13})$/.test(emitter)) throw new Error('RUC o cédula del emisor inválido.');
       let counterpart = get('IDENTIFICACION_RECEPTOR', 'IDENTIFICACION_COMPRADOR', 'IDENTIFICACION_SUJETO_RETENIDO');
       if (!counterpart && sentido === 'RECIBIDOS') counterpart = companyRuc;
@@ -50,9 +56,11 @@ export function parseSriTxt(content: string, companyRuc: string, sentido: 'RECIB
       const date = get('FECHA_EMISION', 'FECHA DE EMISION').split('/').map(Number);
       const fecha = new Date(Date.UTC(date[2], date[1] - 1, date[0]));
       if (date.length !== 3 || fecha.getUTCFullYear() !== date[2] || fecha.getUTCMonth() !== date[1] - 1 || fecha.getUTCDate() !== date[0]) throw new Error('Fecha inválida; usa dd/MM/aaaa.');
+      if (emittedListing && clave.slice(0, 8) !== `${String(date[0]).padStart(2, '0')}${String(date[1]).padStart(2, '0')}${date[2]}`) throw new Error('La fecha de emisión no coincide con la clave de acceso.');
       const type = normalize(get('TIPO_COMPROBANTE', 'TIPO DE COMPROBANTE', 'COMPROBANTE') || clave.slice(8, 10));
       const tipo = ['07', '7', 'RETENCION', 'COMPROBANTEDERETENCION'].includes(type) ? 'RETENCION' : ['04', '4', 'NOTADECREDITO', 'NOTACREDITO'].includes(type) ? 'NOTA_CREDITO' : ['01', '1', 'FACTURA'].includes(type) ? 'FACTURA' : '';
       if (!tipo) throw new Error('Tipo de comprobante no admitido en TXT.');
+      if (emittedListing && clave.slice(8, 10) !== ({ FACTURA: '01', NOTA_CREDITO: '04', RETENCION: '07' } as const)[tipo]) throw new Error('El tipo de comprobante no coincide con la clave de acceso.');
       const taxes: TaxLine[] = [];
       const rate = get('TARIFA_IVA', 'PORCENTAJE_IVA').replace('%', '').trim();
       if (tipo !== 'RETENCION' && rate !== '') {
@@ -82,8 +90,8 @@ export function parseSriTxt(content: string, companyRuc: string, sentido: 'RECIB
         existing.detalleImpuestos.push(...taxes);
       } else records.set(clave, {
         tipoComprobante: tipo, claveAcceso: clave, rucEmisor: emitter,
-        razonSocialEmisor: get('RAZON_SOCIAL_EMISOR', 'RAZON_SOCIAL') || emitter,
-        identificacionContraparte: counterpart, razonSocialContraparte: get('RAZON_SOCIAL_RECEPTOR'), fechaEmision: fecha,
+        razonSocialEmisor: (emittedListing ? get('RAZON_SOCIAL_EMISOR') : get('RAZON_SOCIAL_EMISOR', 'RAZON_SOCIAL')) || emitter,
+        identificacionContraparte: counterpart, razonSocialContraparte: (emittedListing ? get('RAZON_SOCIAL_RECEPTOR', 'RAZON_SOCIAL') : get('RAZON_SOCIAL_RECEPTOR')), fechaEmision: fecha,
         direccion: tipo === 'RETENCION' ? sentido === 'RECIBIDOS' ? 'RETENCION_RECIBIDA' : 'RETENCION_EMITIDA' : sentido === 'RECIBIDOS' ? 'COMPRA' : 'VENTA',
         detalleImpuestos: taxes, clasificacionPendiente: !taxes.length, fuente: 'TXT',
         importeTotal: get('IMPORTE_TOTAL', 'VALOR_TOTAL') ? moneyTxt(get('IMPORTE_TOTAL', 'VALOR_TOTAL')) : 0,
