@@ -5,6 +5,8 @@ import { sameTaxpayer } from './taxpayer-identity';
 const normalize = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 export function moneyTxt(raw: string): number {
   let s = raw.trim().replace(/\$/g, '').replace(/\s/g, '');
+  // El SRI puede omitir el cero entero en importes menores que un dólar.
+  if (/^[.,]\d{1,2}$/.test(s)) s = `0${s}`;
   if (s.includes(',')) {
     if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+),\d{1,2}$/.test(s)) throw new Error(`Importe inválido: ${raw}`);
     s = s.replace(/\./g, '').replace(',', '.');
