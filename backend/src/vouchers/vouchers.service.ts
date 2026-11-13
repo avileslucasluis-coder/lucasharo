@@ -37,7 +37,13 @@ export class VouchersService {
     const authorization = response.autorizaciones.find(a => a.estado === 'AUTORIZADO' && a.comprobante);
     if (!authorization) throw new BadRequestException('El SRI todavía no devolvió el XML autorizado. Reintenta más tarde.');
     if (!['PRODUCCION', '2'].includes(normalizeAuthorizationEnvironment(authorization.ambiente))) throw new BadRequestException('El XML no pertenece al ambiente de producción.');
-    const parsed = parseComprobanteXml(authorization.comprobante, company.ruc);
+    let parsed;
+    try {
+      parsed = parseComprobanteXml(authorization.comprobante, company.ruc);
+    } catch (error) {
+      if (error instanceof XmlComprobanteException) throw new BadRequestException(error.message);
+      throw error;
+    }
     if (parsed.claveAcceso !== claveAcceso || parsed.direccion === 'NO_RELACIONADO') {
       throw new BadRequestException('El XML recibido no corresponde al comprobante o a la empresa.');
     }

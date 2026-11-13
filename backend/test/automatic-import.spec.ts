@@ -21,6 +21,35 @@ function setup() {
   return { prisma, sri, service: new VouchersService(prisma, { registrar: jest.fn() } as any, sri) };
 }
 describe('Completar TXT mediante consulta de solo lectura al SRI', () => {
+  it('completa el XML autorizado de 89 centavos conservando su texto original', async () => {
+    const { service, sri, prisma } = setup();
+    const content = xml().replace('<importeTotal>115</importeTotal>', '<importeTotal>.89</importeTotal>')
+      .replace('<baseImponible>100</baseImponible>', '<baseImponible>.89</baseImponible>')
+      .replace('<valor>15</valor>', '<valor>.00</valor>').replace('<codigoPorcentaje>4</codigoPorcentaje>', '<codigoPorcentaje>0</codigoPorcentaje>');
+    sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente: 'PRODUCCION', comprobante: content }] });
+    await service.completarSri('c', key, 'u');
+    const data = prisma.voucher.updateMany.mock.calls[0][0].data;
+    expect(data).toMatchObject({ importeTotal: 0.89, baseImponibleIva0: 0.89, clasificacionPendiente: false, xmlOriginal: content });
+    expect(data.detalleImpuestos).toEqual([expect.objectContaining({ base: 0.89, valor: 0, tarifa: '0' })]);
+  });
+
+  it.each(['.001', 'no-numero'])('devuelve un error de validación y conserva pendiente el XML con importe %s', async importe => {
+    const { service, sri, prisma } = setup();
+    sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente: 'PRODUCCION', comprobante: xml().replace('<importeTotal>115</importeTotal>', `<importeTotal>${importe}</importeTotal>`) }] });
+    await expect(service.completarSri('c', key, 'u')).rejects.toMatchObject({ status: 400, message: expect.stringContaining('Importe inválido') });
+    expect(prisma.voucher.updateMany).not.toHaveBeenCalled();
+  });
+
+  it.each(['1.0.0', '2.0.0'])('completa retenciones %s con importes menores de un dólar', async version => {
+    const { service, sri, prisma } = setup();
+    const tag = version === '1.0.0' ? 'impuesto' : 'retencion';
+    const lines = `<${tag}><codigo>1</codigo><codigoRetencion>303</codigoRetencion><baseImponible>.20</baseImponible><porcentajeRetener>10</porcentajeRetener><valorRetenido>.02</valorRetenido></${tag}><${tag}><codigo>2</codigo><codigoRetencion>1</codigoRetencion><baseImponible>.20</baseImponible><porcentajeRetener>30</porcentajeRetener><valorRetenido>.06</valorRetenido></${tag}>`;
+    const detail = version === '1.0.0' ? `<impuestos>${lines}</impuestos>` : `<docsSustento><docSustento><retenciones>${lines}</retenciones></docSustento></docsSustento>`;
+    const content = `<comprobanteRetencion version="${version}"><infoTributaria><ruc>1790012345001</ruc><claveAcceso>${key}</claveAcceso></infoTributaria><infoCompRetencion><fechaEmision>01/11/2026</fechaEmision><identificacionSujetoRetenido>0912345678</identificacionSujetoRetenido></infoCompRetencion>${detail}</comprobanteRetencion>`;
+    sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente: 'PRODUCCION', comprobante: content }] });
+    await service.completarSri('c', key, 'u');
+    expect(prisma.voucher.updateMany.mock.calls[0][0].data).toMatchObject({ importeTotal: 0.08, montoIva: 0.06, montoRentaRetenida: 0.02, clasificacionPendiente: false });
+  });
   it.each(['PRODUCCIÓN', 'PRODUCCION', ' producción ', '2'])('completa una factura de producción con ambiente %s', async ambiente => {
     const { service, sri, prisma } = setup();
     sri.consultar.mockResolvedValue({ autorizaciones: [{ estado: 'AUTORIZADO', ambiente, comprobante: xml() }] });

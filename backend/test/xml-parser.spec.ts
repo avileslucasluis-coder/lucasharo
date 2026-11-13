@@ -11,6 +11,14 @@ function factura(comprador = ruc, fecha = '15/08/2026') {
 }
 
 describe('Importación de XML', () => {
+  it.each(['.89', '.9', '.02', '.00', '.89000'])('acepta importe sin cero inicial %s sin redondear', valor => {
+    const content = factura().replace('<baseImponible>100</baseImponible>', `<baseImponible>${valor}</baseImponible>`)
+      .replace('<valor>15</valor>', '<valor>.00</valor>')
+      .replace('<importeTotal>117</importeTotal>', `<importeTotal>${valor}</importeTotal>`);
+    const parsed = parseComprobanteXml(content, ruc);
+    expect(parsed.baseImponibleIva0).toBe(Number(valor));
+    expect(parsed.importeTotal).toBe(Number(valor));
+  });
   it.each(['15.0', '15.00', '15.00000', '15.01000'])('acepta ceros de relleno monetario: %s', valor => {
     const content = factura().replace('<valor>15</valor>', `<valor>${valor}</valor>`)
       .replace('<importeTotal>117</importeTotal>', '<importeTotal>117.00000</importeTotal>')
@@ -21,7 +29,7 @@ describe('Importación de XML', () => {
     const xml = `<autorizacion><estado>NO AUTORIZADO</estado><comprobante><![CDATA[${factura()}]]></comprobante></autorizacion>`;
     expect(() => parseComprobanteXml(xml, ruc)).toThrow(XmlComprobanteException);
   });
-  it.each(['-1', 'NaN', 'Infinity', '1e2', '0x10', '', '1.005', '10000000000'])('rechaza el importe %s antes de persistir', (valor) => {
+  it.each(['-1', 'NaN', 'Infinity', '1e2', '0x10', '', '1.005', '10000000000', '.', '.001', '-.89', '.89.0', ',89'])('rechaza el importe %s antes de persistir', (valor) => {
     expect(() => parseComprobanteXml(factura().replace('<valor>15</valor>', `<valor>${valor}</valor>`), ruc))
       .toThrow(XmlComprobanteException);
   });
