@@ -5,6 +5,7 @@ import { PermissionsGuard } from '../rbac/permissions.guard';
 import { RequirePermissions } from '../rbac/permissions.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { VouchersService } from './vouchers.service';
+import { VoucherExportService } from './voucher-export.service';
 import { ImportVoucherDto, ImportTxtDto, CompleteSriDto } from './dto/import-voucher.dto';
 
 @ApiTags('vouchers')
@@ -12,7 +13,13 @@ import { ImportVoucherDto, ImportTxtDto, CompleteSriDto } from './dto/import-vou
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('api/vouchers')
 export class VouchersController {
-  constructor(private readonly vouchers: VouchersService) {}
+  constructor(private readonly vouchers: VouchersService, private readonly exports: VoucherExportService) {}
+
+  @Get('export-excel')
+  @RequirePermissions('obligaciones.ver')
+  exportarExcel(@Query('companyId') companyId: string, @Query('anio') anio: string, @Query('mes') mes?: string) {
+    return this.exports.excel(companyId, Number(anio), mes !== undefined ? Number(mes) : undefined);
+  }
 
   @Get('pending-details')
   @RequirePermissions('comprobantes.importar')

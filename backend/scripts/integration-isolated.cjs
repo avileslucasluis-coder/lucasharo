@@ -151,9 +151,12 @@ async function main() {
     } }), 1); checks++;
     const list = await req('/api/companies', user.accessToken);
     assert.deepEqual(list.map(c => c.id), [own]);
-    for (const route of ['/api/vouchers', '/api/ats/history', '/api/ats/review', '/api/declarations/history', '/api/declarations/filings', '/api/audit', '/api/tax/obligations']) {
+    for (const route of ['/api/vouchers', '/api/vouchers/export-excel', '/api/ats/history', '/api/ats/review', '/api/declarations/history', '/api/declarations/filings', '/api/audit', '/api/tax/obligations']) {
       await req(`${route}?companyId=${other}&mes=10&anio=2026`, user.accessToken, undefined, 403);
     }
+    const exported = await req(`/api/vouchers/export-excel?companyId=${own}&mes=10&anio=2026`, user.accessToken);
+    assert.equal(exported.mimeType, 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    assert.equal(Buffer.from(exported.contentBase64, 'base64').subarray(0, 2).toString(), 'PK'); checks += 2;
     for (const route of ['/api/declarations/generar', '/api/declarations/presentar', '/api/ats/validate', '/api/ats/generate', '/api/vouchers/import']) {
       await req(route, user.accessToken, { companyId: other, mes: 10, anio: 2026 }, 403);
     }

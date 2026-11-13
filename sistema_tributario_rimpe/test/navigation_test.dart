@@ -36,7 +36,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
 
-      for (final destino in ['Empresas', 'Facturas', 'Importar XML / TXT', 'Retenciones', 'Declaraciones', 'Obligaciones', 'Panel']) {
+      for (final destino in ['Empresas', 'Facturas', 'Importar XML / TXT', 'Retenciones', 'Exportar Excel', 'Declaraciones', 'Obligaciones', 'Panel']) {
         if (size.width < 900) {
           await tester.tap(find.byTooltip('Menú principal'));
           await tester.pumpAndSettle();

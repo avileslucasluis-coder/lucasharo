@@ -22,6 +22,9 @@ class VoucherService extends ChangeNotifier {
   bool _disposed = false;
   SriCompletion? estadoSri(String companyId) => _estados[companyId];
 
+  Future<Map<String, dynamic>> exportarExcel({required String companyId, required int anio, int? mes}) async =>
+    Map<String, dynamic>.from(await api.get('/api/vouchers/export-excel', query: {'companyId': companyId, 'anio': '$anio', if (mes != null) 'mes': '$mes'}));
+
   void _notificar() { if (!_disposed) notifyListeners(); }
 
   @override

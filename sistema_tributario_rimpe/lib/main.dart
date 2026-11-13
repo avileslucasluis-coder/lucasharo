@@ -14,6 +14,7 @@ import 'screens/workspace_dashboard.dart';
 import 'screens/companies_screen.dart';
 import 'screens/xml_import_screen.dart';
 import 'screens/tax_ledger_screen.dart';
+import 'screens/excel_export_screen.dart';
 import 'screens/declaraciones_screen.dart';
 import 'screens/obligaciones_screen.dart';
 
@@ -95,6 +96,7 @@ class _RootShellState extends State<RootShell> {
     const _Destino('Facturas', Icons.description_outlined, Icons.description),
     const _Destino('Importar XML / TXT', Icons.upload_file_outlined, Icons.upload_file),
     const _Destino('Retenciones', Icons.receipt_long_outlined, Icons.receipt_long),
+    const _Destino('Exportar Excel', Icons.file_download_outlined, Icons.file_download),
     const _Destino('Declaraciones', Icons.fact_check_outlined, Icons.fact_check),
     const _Destino('Obligaciones', Icons.rule_folder_outlined, Icons.rule_folder),
     const _Destino('Ayuda', Icons.help_outline, Icons.help),
@@ -107,6 +109,7 @@ class _RootShellState extends State<RootShell> {
         TaxLedgerScreen(companies: _companies, vouchers: _vouchers),
         XmlImportScreen(companies: _companies, vouchers: _vouchers),
         TaxLedgerScreen(companies: _companies, vouchers: _vouchers, retenciones: true),
+        ExcelExportScreen(companies: _companies, vouchers: _vouchers),
         DeclaracionesScreen(companies: _companies, declarations: _declarations, ats: _ats),
         ObligacionesScreen(companies: _companies, obligations: _obligations),
         const HelpScreen(),
